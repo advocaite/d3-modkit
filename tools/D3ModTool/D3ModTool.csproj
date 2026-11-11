@@ -23,6 +23,13 @@
 
   <ItemGroup>
     <EmbeddedResource Include="DocsTemplate.html" LogicalName="DocsTemplate.html" />
+    <!-- ui-designer: the page, served from the exe -->
+    <EmbeddedResource Include="Designer\wwwroot\*" LogicalName="Designer/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ui-designer: a local web server (Kestrel) -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

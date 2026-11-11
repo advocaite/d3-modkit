@@ -2,6 +2,19 @@
 
 API changes, newest first. The client `HostApi` only ever grows: a plugin built for version N runs on any host with version ≥ N.
 
+## 2026-11-11: UI designer (first version)
+
+- `D3ModTool ui-designer`: a visual layout editor (a local web app); see [Game data](07-game-data.md#ui-designer).
+  - It places controls with the game's rules (`UiLayout.cs`): checked against the running game's control rectangle, and all 258 stock layouts resolve.
+  - It draws real textures and text: `TexFile.cs` decodes the DXT formats and resolves `UI:` frame names, and texts are read from the StringLists.
+  - The Art tab browses and extracts the game's art as PNG.
+- Designer: forms-designer layout (toolbox, outline with eye toggles and drag-to-reparent, categorized property grid, 8 resize handles, multi-select, zoom/pan, Preview), Group, New layout, and **Import PNG** as a new `2DUI_` texture (uncompressed BGRA8; loading in the game is still to be confirmed).
+- `UiDocument`: style strings are at entry +8 (an earlier build read and wrote them at +4, so redo any layout saved after editing a string value). Moved and new controls keep the stock record order (a parent before its children).
+- The [UI page](05-ui.md) now documents the real value model: one id space, value lookup order, control types, positioning and anchors, looks and animation.
+- `UiDocument`: a `.ui` reader and writer that is byte-exact on all 258 stock layouts. It understands every array in the format: the header array, 9 per-control arrays, and the arrays nested in 656- and 608-byte blocks.
+- `D3ModTool ui-roundtrip <dir>`.
+- Known issue: the older `ui-clone` and `ui-copy-subtree` commands only relocate three of the per-control arrays. Use them only on layouts without the other arrays, or use the designer's Duplicate instead.
+
 ## 2026-11-11: standalone repository
 
 - The ModKit is its own repository: the sources of the host (`host/`), D3ModTool and D3Casc.Lib (`tools/`), plus `scripts/build.ps1` and `scripts/package.ps1`. MIT license.

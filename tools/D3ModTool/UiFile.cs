@@ -274,7 +274,7 @@ public sealed class UiFile
     /// <summary>D3MODTOOL_CLASS=name: copies get "$anon$&lt;name&gt;" exactly like stock controls instead of a unique suffix (experiment switch).</summary>
     static readonly bool ClassFromName = Environment.GetEnvironmentVariable("D3MODTOOL_CLASS") == "name";
 
-    static void SetUniqueClass(byte[] rec, string name, string suffix)
+    internal static void SetUniqueClass(byte[] rec, string name, string suffix)
     {
         string cls = Encoding.ASCII.GetString(rec, ClassNameAt, 512).Split('\0')[0];
         if (!cls.StartsWith("$anon$")) return;   // named classes are shared on purpose; only anonymous ones are per-control

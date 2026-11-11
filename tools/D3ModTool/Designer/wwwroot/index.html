@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D3 UI Designer</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="toolbar">
+  <b class="brand">D3 UI Designer</b>
+  <button id="newLayout" title="A new, empty layout">New…</button>
+  <button id="save" title="Save (Ctrl+S)">Save</button>
+  <button id="saveAs">Save as…</button>
+  <span class="sep"></span>
+  <button id="undo" title="Undo (Ctrl+Z)">↶</button>
+  <button id="redo" title="Redo (Ctrl+Y)">↷</button>
+  <span class="sep"></span>
+  <div class="seg" id="mode"><button data-mode="design" class="on">Design</button><button data-mode="preview">Preview</button></div>
+  <select id="screen" title="Screen shape: anchored controls move with it">
+    <option value="1920x1080" selected>16:9</option><option value="2560x1080">21:9</option>
+    <option value="1920x1200">16:10</option><option value="1600x1200">4:3</option>
+  </select>
+  <button id="zoomOut" title="Zoom out">−</button><button id="zoomFit" title="Fit (0)">Fit</button><button id="zoomIn" title="Zoom in">+</button>
+  <label class="chk"><input type="checkbox" id="showOutlines" checked> outlines</label>
+  <label class="chk" title="Also draw controls the layout marks as hidden (the window itself is always drawn)"><input type="checkbox" id="showHidden"> hidden</label>
+  <span id="docTitle" class="muted grow"></span>
+</header>
+<div id="layout">
+  <aside id="left" class="panel">
+    <div class="tabs"><button data-tab="toolbox" class="on">Toolbox</button><button data-tab="layouts">Layouts</button><button data-tab="art">Art</button></div>
+    <section data-pane="toolbox" class="pane">
+      <div class="muted small pad">Drag onto the design surface, or click to add to the selected container.</div>
+      <div id="toolbox" class="list"></div>
+    </section>
+    <section data-pane="layouts" class="pane" hidden>
+      <div class="seg full" id="layoutSource"><button data-src="stock" class="on">Game</button><button data-src="custom">Project</button></div>
+      <input id="filter" type="search" placeholder="Filter layouts…">
+      <div id="catalog" class="list"></div>
+      <div class="muted small pad" id="projectDir"></div>
+    </section>
+    <section data-pane="art" class="pane" hidden>
+      <button id="importArt" class="primary" title="Your own picture as a new UI texture of a mod">Import PNG…</button>
+      <input id="importFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+      <input id="artFilter" type="search" placeholder="Filter textures…">
+      <div id="textures" class="list"></div>
+    </section>
+  </aside>
+  <div class="splitter" data-split="left"></div>
+  <main id="center">
+    <div id="stage"><canvas id="canvas"></canvas>
+      <div id="art" hidden>
+        <div class="artbar"><b id="artTitle"></b><span class="muted small" id="artInfo"></span><span class="grow"></span>
+          <button id="artExtract">Extract to project</button><button id="artClose">Close</button></div>
+        <div id="artSheet"><img id="artImg" alt=""><div id="artFrames"></div></div>
+      </div>
+    </div>
+    <div id="status" class="muted small"></div>
+  </main>
+  <div class="splitter" data-split="right"></div>
+  <aside id="right" class="panel">
+    <div class="paneTitle">Outline
+      <span class="grow"></span>
+      <button id="btnGroup" title="Put the selected controls (same parent) into a new panel">Group</button>
+      <button id="btnDup" title="Duplicate (Ctrl+D)">Dup</button>
+      <button id="btnDel" class="danger" title="Delete (Del)">Del</button>
+    </div>
+    <input id="treeFilter" type="search" placeholder="Filter controls…">
+    <div id="tree" class="list"></div>
+    <div class="hsplitter" id="treeSplit"></div>
+    <div class="paneTitle">Properties <span class="grow"></span><span id="propTarget" class="muted small"></span></div>
+    <div id="props"></div>
+  </aside>
+</div>
+<div id="toast"></div>
+<dialog id="newDialog">
+  <form method="dialog">
+    <h3>New layout</h3>
+    <label>Name <input id="newName" value="MyScreen" pattern="[A-Za-z0-9_]+" required></label>
+    <label>SNO id <input id="newSno" type="number" value="900001" title="A UI SNO id the game does not use"></label>
+    <div class="row"><button value="cancel">Cancel</button><button id="newOk" value="ok" class="primary">Create</button></div>
+  </form>
+</dialog>
+<dialog id="importDialog">
+  <form method="dialog">
+    <h3>Import art</h3>
+    <div id="importPreview" class="muted small"></div>
+    <label>Mod folder <input id="impMod" required title="A folder in the project; created with a mod.json if new"></label>
+    <label>Texture <input id="impName" required pattern="[A-Za-z0-9_]+" title="Becomes 2DUI_<name>.tex in <mod>\data\Base\Textures"></label>
+    <label>Frame <input id="impFrame" required pattern="[A-Za-z0-9_]+" title="Layouts use it as UI:<frame>"></label>
+    <div class="muted small">Layouts use it as <b id="impRef"></b>. Unique names only: the game registers every UI frame by name.</div>
+    <div class="row"><button value="cancel">Cancel</button><button value="ok" class="primary">Import</button></div>
+  </form>
+</dialog>
+<datalist id="propList"></datalist>
+<script src="app.js"></script>
+</body>
+</html>

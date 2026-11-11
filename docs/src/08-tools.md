@@ -35,6 +35,8 @@ The ModKit's command line tool (`D3ModTool.exe`, .NET 8). Options take the form 
 |---|---|
 | `casc-extract <group> <nameRegex> <outDir>` | Extracts stock SNO files from the installed game, e.g. `casc-extract UI "^BattleNetCampaign$" out`. |
 | `ui-*` | Layout editing; see [Game data](07-game-data.md#ui-layout-tools). |
+| `ui-designer [projectDir] [--port N] [--install DIR] [--browser no]` | The visual UI designer; see [Game data](07-game-data.md#ui-designer). |
+| `ui-roundtrip <dir>` | Checks that every `.ui` under the folder writes back byte-exact. |
 
 ### Docs
 

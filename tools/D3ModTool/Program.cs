@@ -258,6 +258,14 @@ switch (cmd)
         if (positional.Count < 2) { Console.WriteLine("usage: modhost-install <D3ModHost build dir> [--client DIR]"); return 1; }
         return ModInstall.InstallHost(positional[1], ClientDir(), Console.WriteLine);
     }
+    case "ui-designer":
+        // ui-designer [projectDir] [--port 5190] [--install DIR] [--browser no]: the visual UI designer (local web app)
+        return D3ModTool.Designer.DesignerServer.Run(positional.Count > 1 ? positional[1] : ".", options.GetValueOrDefault("--install"),
+            int.Parse(Opt("--port", "5190")), !Opt("--browser", "yes").Equals("no", StringComparison.OrdinalIgnoreCase), Console.WriteLine);
+    case "ui-roundtrip":
+        // ui-roundtrip <dir>: every .ui must write back byte-exact through UiDocument
+        if (positional.Count < 2) { Console.WriteLine("usage: ui-roundtrip <dir with .ui files>"); return 1; }
+        return UiDocument.RoundTrip(positional[1], Console.WriteLine) == 0 ? 0 : 2;
     case "docs-build":
     {
         // docs-build [srcDir] [out.html]: the ModKit docs (Markdown) -> one HTML page

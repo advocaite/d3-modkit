@@ -1,0 +1,11 @@
+{
+  "id": "example-gold-rate",
+  "name": "Example: Gold Rate",
+  "version": "1.0.0",
+  "build": "2.8.0.99920",
+  "type": "both",
+  "description": "ModKit example. Server part: multiplies every gold drop (ServerHooks.OnGoldDrop) and adds the command !goldrate. Client part (Rust): shows the rate on the main menu's Start Game button. Both read settings.json from the mod's folder.",
+  "requires": [],
+  "server": { "assembly": "server/GoldRate.Server.dll", "source": "server-src/" },
+  "client_code": { "dll": "client-code/gold_rate_client.dll", "source": "client-src/" }
+}

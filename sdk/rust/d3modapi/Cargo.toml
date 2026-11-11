@@ -1,0 +1,8 @@
+[package]
+name = "d3modapi"
+version = "0.1.0"
+edition = "2021"
+description = "The API between D3ModHost.dll and client mod plugins (mods\\<id>\\client-code\\*.dll). See MODDING.md."
+
+[lib]
+path = "src/lib.rs"

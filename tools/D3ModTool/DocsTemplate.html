@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D3 ModKit Docs</title>
+<style>
+:root {
+  --bg: #f6f4ef; --panel: #ffffff; --text: #24211c; --muted: #6d665b; --line: #e2ddd2; --accent: #9c3d14;
+  --accent-soft: #f3e3d9; --code-bg: #f1eee7; --code-text: #2b2722; --mark: #ffe08a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15130f; --panel: #1d1a15; --text: #e9e3d8; --muted: #a39a8a; --line: #332e26; --accent: #e08a52;
+    --accent-soft: #3a2619; --code-bg: #24201a; --code-text: #efe7da; --mark: #6b5414;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15130f; --panel: #1d1a15; --text: #e9e3d8; --muted: #a39a8a; --line: #332e26; --accent: #e08a52;
+  --accent-soft: #3a2619; --code-bg: #24201a; --code-text: #efe7da; --mark: #6b5414;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 15px/1.6 "Segoe UI", system-ui, sans-serif; display: flex; }
+nav { width: 290px; flex: none; height: 100vh; overflow-y: auto; border-right: 1px solid var(--line); background: var(--panel);
+      padding: 16px 14px 40px; position: sticky; top: 0; }
+nav h1 { font-size: 17px; margin: 0 0 2px; letter-spacing: .02em; }
+nav .built { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+#search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+nav ul { list-style: none; margin: 10px 0 0; padding: 0; }
+nav li a { display: block; padding: 4px 8px; border-radius: 5px; color: var(--text); text-decoration: none; }
+nav li a:hover { background: var(--accent-soft); }
+nav li a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+nav li ul { margin: 0 0 6px 10px; }
+nav li ul a { font-size: 13.5px; color: var(--muted); padding: 2px 8px; }
+#results a { display: block; padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 13.5px; }
+#results a b { color: var(--accent); }
+#results .snip { color: var(--muted); font-size: 12.5px; }
+.theme { margin-top: 14px; font-size: 12.5px; color: var(--muted); }
+.theme button { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; }
+article { max-width: 920px; padding: 28px 40px 80px; }
+article h1 { font-size: 30px; margin-top: 0; }
+article h2 { margin-top: 36px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+article a { color: var(--accent); }
+code { background: var(--code-bg); color: var(--code-text); padding: 1px 5px; border-radius: 4px; font: 13px/1.5 Consolas, "Cascadia Mono", monospace; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+pre code { padding: 0; background: none; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); }
+blockquote { margin: 12px 0; padding: 8px 14px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; }
+mark { background: var(--mark); color: inherit; }
+.menu { display: none; }
+@media (max-width: 800px) {
+  body { display: block; }
+  nav { position: fixed; z-index: 5; left: 0; top: 0; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 20px #0005; }
+  nav.open { transform: none; }
+  main { height: auto; }
+  article { padding: 56px 16px 60px; }
+  .menu { display: block; position: fixed; top: 10px; left: 10px; z-index: 6; background: var(--panel); color: var(--text);
+          border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+}
+</style>
+</head>
+<body>
+<button class="menu" id="menu">☰ Docs</button>
+<nav id="nav">
+  <h1>D3 ModKit</h1>
+  <div class="built">Diablo III 2.8.0.99920 · built __BUILT__</div>
+  <input id="search" type="search" placeholder="Search the docs…" autocomplete="off">
+  <div id="results"></div>
+  <ul id="toc"></ul>
+  <div class="theme">Theme: <button id="theme">auto</button></div>
+  <div class="built" style="margin-top:14px">Independent fan project, not affiliated with Blizzard Entertainment in any way.
+    Diablo is a trademark of Blizzard Entertainment, Inc.</div>
+</nav>
+<main id="main"><article id="page"></article></main>
+<script>
+const DOCS = /*__DOCS__*/null;
+const toc = document.getElementById('toc'), page = document.getElementById('page'), main = document.getElementById('main');
+const results = document.getElementById('results'), search = document.getElementById('search'), nav = document.getElementById('nav');
+
+function buildToc() {
+  toc.innerHTML = DOCS.map(p => `<li><a href="#${p.id}" data-page="${p.id}">${p.title}</a>` +
+    (p.sections.length ? `<ul>${p.sections.map(s => `<li><a href="#${s.id}">${s.title}</a></li>`).join('')}</ul>` : '') + '</li>').join('');
+}
+function show() {
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const pageId = hash.split('--')[0];
+  const p = DOCS.find(d => d.id === pageId) || DOCS[0];
+  if (page.dataset.id !== p.id) { page.innerHTML = p.html; page.dataset.id = p.id; }
+  document.querySelectorAll('#toc a[data-page]').forEach(a => a.classList.toggle('active', a.dataset.page === p.id));
+  const target = hash.includes('--') ? document.getElementById(hash) : null;
+  if (target) target.scrollIntoView(); else main.scrollTop = 0, window.scrollTo(0, 0);
+  document.title = p.title + ' – D3 ModKit Docs';
+  nav.classList.remove('open');
+}
+function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+search.addEventListener('input', () => {
+  const q = search.value.trim().toLowerCase();
+  toc.style.display = q ? 'none' : '';
+  if (!q) { results.innerHTML = ''; return; }
+  const hits = [];
+  for (const p of DOCS) {
+    const text = p.text, lower = text.toLowerCase();
+    let i = lower.indexOf(q), n = 0;
+    while (i >= 0 && n < 3) {
+      const a = Math.max(0, i - 50), b = Math.min(text.length, i + q.length + 70);
+      const snip = esc(text.slice(a, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length, b));
+      // the section the hit is in: the last "## " title before it
+      let sec = null;
+      for (const s of p.sections) { const at = lower.indexOf(s.title.toLowerCase()); if (at >= 0 && at <= i) sec = s; }
+      hits.push(`<a href="#${sec ? sec.id : p.id}"><b>${p.title}</b>${sec ? ' › ' + sec.title : ''}<div class="snip">…${snip}…</div></a>`);
+      i = lower.indexOf(q, i + q.length); n++;
+    }
+  }
+  results.innerHTML = hits.length ? hits.slice(0, 40).join('') : '<div class="snip" style="padding:8px">No matches.</div>';
+});
+results.addEventListener('click', () => { search.value = ''; results.innerHTML = ''; toc.style.display = ''; });
+const themeBtn = document.getElementById('theme');
+function applyTheme(t) {
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  themeBtn.textContent = t;
+}
+let theme = 'auto';
+try { theme = localStorage.getItem('d3docs-theme') || 'auto'; } catch (e) {}
+applyTheme(theme);
+themeBtn.addEventListener('click', () => {
+  theme = { auto: 'light', light: 'dark', dark: 'auto' }[theme];
+  applyTheme(theme);
+  try { localStorage.setItem('d3docs-theme', theme); } catch (e) {}
+});
+document.getElementById('menu').addEventListener('click', () => nav.classList.toggle('open'));
+window.addEventListener('hashchange', show);
+buildToc(); show();
+</script>
+</body>
+</html>

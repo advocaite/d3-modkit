@@ -1,0 +1,10 @@
+{
+  "id": "example-hello-csharp",
+  "name": "Example: Hello C#",
+  "version": "1.0.0",
+  "build": "2.8.0.99920",
+  "type": "client",
+  "description": "ModKit example of a client plugin written in C# (NativeAOT DLL): wraps the main menu's update and, once, logs the menu's control paths with dump_controls - the way to find the controls your mod wants to change.",
+  "requires": [],
+  "client_code": { "dll": "client-code/HelloCSharp.dll", "source": "client-src/" }
+}

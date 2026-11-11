@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Server part of the gold-rate example. Builds ..\server\GoldRate.Server.dll; `D3ModTool mod-install - -server <dir>` copies
+       it to <server>\Mods\example-gold-rate\server\, where the server's ModLoader loads it at startup.
+       D3ServerDir = your server folder (the one with Blizzless.dll): set the environment variable D3_SERVER_DIR, or pass
+       /p:D3ServerDir=... -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>GoldRate.Server</AssemblyName>
+    <RootNamespace>GoldRateMod</RootNamespace>
+    <OutputPath>..\server\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <D3ServerDir Condition="'$(D3ServerDir)' == ''">$(D3_SERVER_DIR)</D3ServerDir>
+    <!-- fallback: the ModKit checked out next to a DiIiS server source tree (..\Diablo-3-Core-2.7.4\publish) -->
+    <D3ServerDir Condition="'$(D3ServerDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\Diablo-3-Core-2.7.4\publish</D3ServerDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Private=false: the server already loads these; the mod must not ship its own copies -->
+    <Reference Include="Blizzless"><HintPath>$(D3ServerDir)\Blizzless.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

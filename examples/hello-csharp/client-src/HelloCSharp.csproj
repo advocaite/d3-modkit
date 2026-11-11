@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A client plugin in C#: NativeAOT compiles it to a plain native DLL with a real d3mod_init export (no .NET runtime
+       needed in the game). Build: dotnet publish -c Release -r win-x64 (tools\build_mods.ps1 does it), then copy
+       HelloCSharp.dll to ..\client-code\. Needs the "Desktop development with C++" build tools (the native linker). -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <PublishAot>true</PublishAot>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <AssemblyName>HelloCSharp</AssemblyName>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- the API binding from the ModKit SDK -->
+    <Compile Include="..\..\..\sdk\csharp\D3ModApi.cs" Link="D3ModApi.cs" />
+  </ItemGroup>
+
+</Project>

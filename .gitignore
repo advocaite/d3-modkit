@@ -1,0 +1,18 @@
+# build output (careful: host/src/bin/ is SOURCE - d3inject - so no bare "bin/" pattern)
+target/
+**/bin/Debug/
+**/bin/Release/
+**/bin/aot/
+**/obj/
+/tools/D3ModTool/out/
+/dist/
+*.user
+.vs/
+
+# built example plugins (sources are tracked; the DLLs are build output)
+/examples/*/client-code/
+/examples/*/server/
+
+# logs and local settings
+*.log
+appsettings.Local.json

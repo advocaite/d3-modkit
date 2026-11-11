@@ -1,0 +1,21 @@
+[package]
+name = "d3modhost"
+version = "0.1.0"
+edition = "2021"
+description = "D3ModKit client mod host for a modding copy of Diablo III 2.8.0.99920 (see ../docs)"
+
+[lib]
+name = "D3ModHost"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+d3modapi = { path = "../sdk/rust/d3modapi" }
+
+[[bin]]
+name = "d3inject"
+path = "src/bin/d3inject.rs"
+
+[profile.release]
+panic = "abort"
+opt-level = 2

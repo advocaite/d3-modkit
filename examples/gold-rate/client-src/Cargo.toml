@@ -1,0 +1,15 @@
+[package]
+name = "gold_rate_client"
+version = "1.0.0"
+edition = "2021"
+description = "ModKit example, client part: shows the gold rate on the main menu"
+
+[lib]
+name = "gold_rate_client"
+crate-type = ["cdylib"]
+
+[dependencies]
+d3modapi = { path = "../../../sdk/rust/d3modapi" }
+
+[profile.release]
+panic = "abort"

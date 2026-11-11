@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>D3Casc</RootNamespace>
+    <AssemblyName>D3Casc.Lib</AssemblyName>
+    <Configurations>Debug;Release;github</Configurations>
+    <!-- Reads the installed Diablo III client's CASC storage (root, CoreTOC.dat, Packages.dat) on top of the
+         game-agnostic WiseOwl.Casc transport, the same package the D4 project uses. Used by the server (CASC asset
+         source) and by the D3Casc command-line tool (../../../D3Casc). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WiseOwl.Casc" Version="0.8.0" />
+  </ItemGroup>
+
+</Project>

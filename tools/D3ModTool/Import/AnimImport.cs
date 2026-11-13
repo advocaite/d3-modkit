@@ -88,6 +88,62 @@ public static class AnimImport
         public Prs[][] Local = Array.Empty<Prs[]>();
         public bool Generated;
         public int TemplateAnim = -1, KeyCount;
+        /// <summary>Root motion: cumulative model-space displacement per frame (null = none), and the average velocity in feet
+        /// per game tick (1/60 s), as stock walk / run anims store them (anim_2.8.0.md: permutation +288 / +320).</summary>
+        public Vector3[]? Root;
+        public Vector3 Velocity;
+    }
+
+    /// <summary>
+    /// Root motion for moving clips. Stock walk / run anims are in place: the skeleton stays put, the permutation stores the
+    /// cumulative root displacement per frame (+288, a straight line along +X: Sandling walk 0 -> 3.9 ft over 30 frames) and the
+    /// average velocity (+320) = displacement per frame x frames per tick (3.9 / 30 x 0.5 = 0.065 ft/tick = 3.9 ft/s). The game
+    /// moves the actor; the velocity tells it how far one cycle carries the model, so the steps can match the movement.
+    /// <list type="bullet">
+    /// <item><paramref name="extract"/>: for walk / run clips whose root bone travels (horizontally, ≥ 0.1 ft over the clip), the
+    ///   straight-line travel first frame -> last frame is removed from the root bones (sway and bob stay) and stored as root
+    ///   displacement + velocity. Author such a clip with the feet planted on the ground while the body moves forward.</item>
+    /// <item><paramref name="speeds"/> (ft/s, by clip name or role word): sets the stored travel for a clip, e.g. for an in-place
+    ///   clip; an extracted value is replaced (with a note).</item>
+    /// <item>A walk / run clip without either keeps velocity 0 and gets a warning (the game cannot pace it: foot sliding).</item>
+    /// </list>
+    /// </summary>
+    public static void ApplyRootMotion(List<Clip> clips, SkinnedImport.Skeleton sk, bool extract, IReadOnlyDictionary<string, float> speeds, Action<string> say)
+    {
+        var roots = sk.Bones.Where(b => b.Parent < 0).Select(b => b.Index).ToList();
+        foreach (var c in clips.Where(c => !c.Generated))
+        {
+            string word = c.Role.ToString().ToLowerInvariant();
+            float? speed = speeds.TryGetValue(c.Name, out var s1) ? s1 : speeds.TryGetValue(word, out var s2) && c.Role is Role.Walk or Role.Run ? s2 : null;
+            bool moving = c.Role is Role.Walk or Role.Run;
+            int n = c.Frames;
+            if (n < 2 || !(moving || speed != null)) continue;
+            var t0 = c.Local[roots[0]][0].T; var t1 = c.Local[roots[0]][n - 1].T;
+            var travel = new Vector3(t1.X - t0.X, t1.Y - t0.Y, 0);
+            if (extract && moving && travel.Length() >= 0.1f)
+            {
+                for (int f = 0; f < n; f++)
+                {
+                    var step = travel * (f / (float)(n - 1));
+                    foreach (int r in roots) c.Local[r][f] = c.Local[r][f] with { T = c.Local[r][f].T - step };
+                }
+                c.Root = Enumerable.Range(0, n).Select(f => travel * (f / (float)(n - 1))).ToArray();
+                c.Velocity = travel / (n - 1) * c.FramesPerTick;
+                double ang = Math.Atan2(travel.Y, travel.X) * 180 / Math.PI;
+                say($"clip {c.Name}: root motion {travel.Length():0.##} ft per cycle ({c.Velocity.Length() * 60:0.##} ft/s) taken out of the root bone{(roots.Count > 1 ? "s" : "")} and stored as the anim's travel" +
+                    (Math.Abs(ang) > 20 ? $"; WARNING: it goes {ang:0}° off the model's forward axis (+X), check --forward" : ""));
+            }
+            if (speed is float sp)
+            {
+                if (c.Velocity != Vector3.Zero) say($"clip {c.Name}: --speed {sp:0.##} ft/s replaces the authored {c.Velocity.Length() * 60:0.##} ft/s (the feet will not match the movement)");
+                float perFrame = sp / 60f / c.FramesPerTick;
+                c.Root = Enumerable.Range(0, n).Select(f => new Vector3(perFrame * f, 0, 0)).ToArray();
+                c.Velocity = new Vector3(sp / 60f, 0, 0);
+                say($"clip {c.Name}: stored speed {sp:0.##} ft/s ({c.Velocity.X:0.####} ft/tick)");
+            }
+            else if (moving && c.Velocity == Vector3.Zero)
+                say($"warning: clip {c.Name} ({c.Role}) is in place with no travel: velocity 0, so the game cannot pace its steps to the movement (feet slide). Move the root forward over the cycle with the feet planted, or give --speed {word}=<ft/s>");
+        }
     }
 
     /// <summary>Role, explicit tag and loop flag from a clip name (see the class summary).</summary>
@@ -115,7 +171,7 @@ public static class AnimImport
     /// Samples every glTF animation at <paramref name="fps"/> (frames 0 .. round(duration × fps), at least 2) into per-bone
     /// local transforms in D3 space: each frame evaluates the animated node tree (LINEAR / STEP / CUBICSPLINE samplers; rest
     /// values for unanimated properties), then local = world(joint) × world(parent joint)⁻¹, so non-joint nodes in between are
-    /// folded in like in the bind pose. Clips are in place: root motion is not extracted (the server moves the actor).
+    /// folded in like in the bind pose. Root motion of walk / run clips is handled afterwards (<see cref="ApplyRootMotion"/>).
     /// </summary>
     public static List<Clip> Sample(GltfModel m, SkinnedImport.Skeleton sk, AxisMap map, float fps, Action<string> say)
     {
@@ -303,7 +359,7 @@ public static class AnimImport
     /// <summary>
     /// An Anim file: the template anim's 16-byte header and 56-byte struct (flags 0, our playback mode, appearance, one
     /// permutation) and its first permutation's 408 bytes with our name, frames per tick, bones, frame count, curves, root
-    /// positions (zero: in place) and the template's other fields (blend ticks, speed / ragdoll factors, contact frames and
+    /// displacement and velocity (<see cref="ApplyRootMotion"/>; zero = in place) and the template's other fields (blend ticks, speed / ragdoll factors, contact frames and
     /// the earliest interrupt scaled to our length, contact offsets, hardpoint link); no events.
     /// Blob order and 8-byte alignment as stock: permutation, bone names, translation curves, their keys, rotation curves,
     /// their keys, scale curves, their keys, root positions, nonlinear offsets.
@@ -362,7 +418,9 @@ public static class AnimImport
             BinaryPrimitives.WriteInt16LittleEndian(d.AsSpan(at + 4), Q16(q.Z)); BinaryPrimitives.WriteInt16LittleEndian(d.AsSpan(at + 6), Q16(q.W));
         });
         int sAt = Curves(sKeys, 8, (d, at, b, f) => WF(d, at, c.Local[b][f].S));
-        int rootAt = Put(new byte[frames * 12]);
+        var rootData = new byte[frames * 12];
+        if (c.Root != null) for (int f = 0; f < frames; f++) WVec(rootData, 12 * f, c.Root[f]);
+        int rootAt = Put(rootData);
         int nlAt = Put(new byte[frames * 12]);
         var bytes = o.ToArray();
 
@@ -388,7 +446,7 @@ public static class AnimImport
         SetSer(perm, 268, 0, 0); W32(perm, 276, 0);                 // no events
         SetSer(perm, 288, rootAt, frames * 12);
         SetSer(perm, 304, nlAt, frames * 12);
-        WVec(perm, 320, Vector3.Zero);                               // in place
+        WVec(perm, 320, c.Velocity);                                 // average travel per tick (0 = in place)
         perm.CopyTo(bytes, permAt);
 
         // struct

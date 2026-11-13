@@ -42,10 +42,21 @@ public static class ModelImport
         public string? Forward;
         /// <summary>Import a skinned glTF as a static prop in its rest pose.</summary>
         public bool Static;
-        /// <summary>Skinned import: the Monster SNO the new actor uses (default: the template actor's).</summary>
-        public int? MonsterSno;
+        /// <summary>Skinned import: the Monster SNO (stats, AI, powers, name, type). <c>new</c> (default) = an own copy of the
+        /// template actor's Monster SNO named like the actor; <c>new:&lt;sno|name&gt;</c> = an own copy of another one;
+        /// <c>&lt;sno|name&gt;</c> = use that stock Monster SNO as it is (the monster then shows its name and type).</summary>
+        public string? Monster;
+        /// <summary>Skinned import, own Monster SNO: the name players see (StringList <c>Monsters</c>, key = the Monster SNO's name).</summary>
+        public string? DisplayName;
+        /// <summary>Skinned import, own Monster SNO: the monster type (Undead, Demon, Beast, Human, ... or 0-12); default the source's.</summary>
+        public string? MonsterType;
         /// <summary>Skinned import: animation sample rate (frames per second; D3 stores frames per game tick = fps / 60).</summary>
         public float Fps = 30f;
+        /// <summary>Skinned import: <c>auto</c> (default) takes the root bone's travel out of walk / run clips and stores it as the
+        /// anim's root motion and velocity; <c>off</c> leaves the clips as they are.</summary>
+        public string RootMotion = "auto";
+        /// <summary>Skinned import: stored movement speed per clip (ft/s), keyed by clip name or role word (walk, run).</summary>
+        public Dictionary<string, float> Speeds = new(StringComparer.OrdinalIgnoreCase);
     }
 
     public static int Run(Options o, Action<string> say)
@@ -173,7 +184,8 @@ public static class ModelImport
                 throw new InvalidDataException($"the game already has a {SnoGroups.Name(g)} named '{n}'; pick another --name");
             if (mine.TryGetValue((g, n), out int keep) && !used.Contains(keep) && o.FirstSno == null) { result[(g, n)] = keep; used.Add(keep); }
         }
-        int next = o.FirstSno ?? FirstModSno;
+        // new files of a re-imported mod continue its own block (the first free id from its lowest one)
+        int next = o.FirstSno ?? (result.Count > 0 ? result.Values.Min() : FirstModSno);
         foreach (var (g, n) in names)
         {
             if (result.ContainsKey((g, n))) continue;
@@ -490,7 +502,8 @@ public static class ModelImport
 
     // ------------------------------------------------------------------------------------------------ mod.json
 
-    internal static void UpdateModJson(string modDir, List<(int Group, int Sno, string Name, string Path, int Size)> written, Action<string> say)
+    internal static void UpdateModJson(string modDir, List<(int Group, int Sno, string Name, string Path, int Size)> written, Action<string> say,
+        IEnumerable<(int Group, int Sno, string Name, string Locale)>? replaced = null)
     {
         var path = Path.Combine(modDir, "mod.json");
         JsonObject j = File.Exists(path)
@@ -504,6 +517,16 @@ public static class ModelImport
             adds.Add(new JsonObject { ["group"] = SnoGroups.Name(w.Group), ["sno"] = w.Sno, ["name"] = w.Name });
         }
         j["adds"] = adds;
+        if (replaced != null)
+        {
+            var reps = j["replaces"] as JsonArray ?? new JsonArray();
+            foreach (var r in replaced)
+            {
+                if (reps.Any(x => x is JsonObject ox && (int?)ox["sno"] == r.Sno && string.Equals((string?)ox["locale"], r.Locale, StringComparison.OrdinalIgnoreCase))) continue;
+                reps.Add(new JsonObject { ["group"] = SnoGroups.Name(r.Group), ["sno"] = r.Sno, ["name"] = r.Name, ["locale"] = r.Locale });
+            }
+            j["replaces"] = reps;
+        }
         File.WriteAllText(path, j.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) + "\n");
         say($"mod.json: {adds.Count} entries in \"adds\"");
     }

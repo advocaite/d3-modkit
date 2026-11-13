@@ -232,9 +232,11 @@ switch (cmd)
     case "import-gltf":
     {
         // import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>]
-        //             [--forward +z|-z|+x|-x] [--static yes] [--monster <Monster SNO>] [--fps <n>] [--install DIR]
-        // a skinned glTF becomes an animated monster (skeleton, Anims, AnimSet, Monster actor), anything else a static prop
-        const string usage = "usage: import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--forward +z|-z|+x|-x] [--static yes] [--monster <Monster SNO>] [--fps <n>] [--install DIR]";
+        //             [--forward +z|-z|+x|-x] [--static yes] [--fps <n>] [--install DIR]
+        //             [--monster new|new:<sno|name>|<sno|name>] [--display-name <text>] [--monster-type <type>] [--root-motion auto|off] [--speed walk=<ft/s>,run=<ft/s>]
+        // a skinned glTF becomes an animated monster (skeleton, Anims, AnimSet, own Monster SNO + name, Monster actor), anything else a static prop
+        const string usage = "usage: import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--forward +z|-z|+x|-x] [--static yes] [--fps <n>] [--install DIR]\n" +
+                             "       skinned: [--monster new|new:<sno|name>|<sno|name>] [--display-name <text>] [--monster-type Undead|Demon|Beast|Human|...] [--root-motion auto|off] [--speed walk=<ft/s>,run=<ft/s>]";
         if (positional.Count < 3 || !options.ContainsKey("--name")) { Console.WriteLine(usage); return 1; }
         var ci = System.Globalization.CultureInfo.InvariantCulture;
         return D3ModTool.Import.ModelImport.Run(new D3ModTool.Import.ModelImport.Options
@@ -246,8 +248,15 @@ switch (cmd)
             ActorScale = options.TryGetValue("--actor-scale", out var asc) ? float.Parse(asc, ci) : 1f,
             Forward = options.GetValueOrDefault("--forward"),
             Static = Opt("--static", "no").Equals("yes", StringComparison.OrdinalIgnoreCase),
-            MonsterSno = options.TryGetValue("--monster", out var mo) ? int.Parse(mo) : null,
+            Monster = options.GetValueOrDefault("--monster"),
+            DisplayName = options.GetValueOrDefault("--display-name"),
+            MonsterType = options.GetValueOrDefault("--monster-type"),
             Fps = options.TryGetValue("--fps", out var fp) ? float.Parse(fp, ci) : 30f,
+            RootMotion = Opt("--root-motion", "auto"),
+            Speeds = options.TryGetValue("--speed", out var spd)
+                ? spd.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => x.Split('='))
+                    .ToDictionary(x => x[0], x => x.Length == 2 ? float.Parse(x[1], ci) : throw new ArgumentException("--speed: <clip>=<ft/s>[,...]"), StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase),
         }, Console.WriteLine);
     }
     case "casc-selftest":
@@ -283,6 +292,58 @@ switch (cmd)
         // ui-designer [projectDir] [--port 5190] [--install DIR] [--browser no]: the visual UI designer (local web app)
         return D3ModTool.Designer.DesignerServer.Run(positional.Count > 1 ? positional[1] : ".", options.GetValueOrDefault("--install"),
             int.Parse(Opt("--port", "5190")), !Opt("--browser", "yes").Equals("no", StringComparison.OrdinalIgnoreCase), Console.WriteLine);
+    case "string-set":
+    {
+        // string-set <modDir> <List> <Key> <Text> [--locale enUS] [--install DIR]: add or change one game text in a mod
+        // (data\<locale>\StringList\<List>.stl, started from the mod's copy or the stock list; every stock entry kept)
+        if (positional.Count < 5) { Console.WriteLine("usage: string-set <modDir> <List> <Key> <Text> [--locale enUS] [--install DIR]"); return 1; }
+        using var d3 = D3Casc.D3Storage.Open(D3Casc.D3Storage.ResolveInstall(options.GetValueOrDefault("--install")));
+        StringListFile.SetInMod(d3, Path.GetFullPath(positional[1]), positional[2], positional[3], positional[4], options.GetValueOrDefault("--locale"), Console.WriteLine);
+        return 0;
+    }
+    case "string-get":
+    {
+        // string-get <List> <Key|regex:...> [--locale enUS] [--install DIR]: a game text (from the install, or a mod's .stl given as <List>)
+        if (positional.Count < 3) { Console.WriteLine("usage: string-get <List|file.stl> <Key|re:regex> [--locale enUS] [--install DIR]"); return 1; }
+        StringListFile list;
+        if (File.Exists(positional[1])) list = new StringListFile(File.ReadAllBytes(positional[1]));
+        else
+        {
+            using var d3 = D3Casc.D3Storage.Open(D3Casc.D3Storage.ResolveInstall(options.GetValueOrDefault("--install")));
+            var toc = d3.Toc.InGroup(StringListFile.Group).FirstOrDefault(e => e.Name.Equals(positional[1], StringComparison.OrdinalIgnoreCase));
+            if (toc.Name == null) { Console.WriteLine($"no StringList named {positional[1]}"); return 1; }
+            var loc = Opt("--locale", "enUS");
+            var e = d3.SnoEntries(StringListFile.Group, toc.Id).FirstOrDefault(x => x.Directory.Equals(loc, StringComparison.OrdinalIgnoreCase));
+            if (e == null) { Console.WriteLine($"{toc.Name} is not in locale {loc}"); return 1; }
+            list = new StringListFile(d3.Read(e));
+        }
+        var q = positional[2];
+        var rx = q.StartsWith("re:") ? new System.Text.RegularExpressions.Regex(q[3..], System.Text.RegularExpressions.RegexOptions.IgnoreCase) : null;
+        int hits = 0;
+        foreach (var e in list.Entries.Where(e => rx != null ? rx.IsMatch(e.Key) || rx.IsMatch(e.Text) : e.Key == q)) { Console.WriteLine($"{e.Key}\t{e.Text}"); hits++; }
+        return hits > 0 ? 0 : 2;
+    }
+    case "string-roundtrip":
+    {
+        // string-roundtrip [--install DIR]: every StringList of every locale must rebuild byte for byte through StringListFile
+        using var d3 = D3Casc.D3Storage.Open(D3Casc.D3Storage.ResolveInstall(options.GetValueOrDefault("--install")));
+        int ok = 0, bad = 0, entries = 0, badHash = 0;
+        foreach (var e in d3.AllEntries.Where(e => e.IsSno && e.Group == StringListFile.Group))
+        {
+            var b = d3.Read(e);
+            try
+            {
+                var f = new StringListFile(b);
+                entries += f.Entries.Count;
+                for (int i = 0; i < f.Entries.Count; i++)
+                    if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(StringListFile.EntriesAt + i * StringListFile.EntrySize + 32)) != StringListFile.Hash(f.Entries[i].Key)) badHash++;
+                if (f.Build().AsSpan().SequenceEqual(b)) ok++; else { bad++; if (bad <= 10) Console.WriteLine($"DIFFERS: {e.Path}"); }
+            }
+            catch (Exception x) { bad++; if (bad <= 10) Console.WriteLine($"FAILED: {e.Path}: {x.Message}"); }
+        }
+        Console.WriteLine($"{ok + bad} StringLists, {entries:N0} entries: {ok} rebuild byte for byte, {bad} do not; stored key hashes that differ from h*33+c: {badHash}");
+        return bad == 0 && badHash == 0 ? 0 : 2;
+    }
     case "ui-roundtrip":
         // ui-roundtrip <dir>: every .ui must write back byte-exact through UiDocument
         if (positional.Count < 2) { Console.WriteLine("usage: ui-roundtrip <dir with .ui files>"); return 1; }
@@ -303,7 +364,9 @@ switch (cmd)
         Console.WriteLine("          casc-selftest [client] | mod-build <modDir>... [--client DIR] | mod-verify | mod-restore   (client: --client or %D3_CLIENT_DIR%)");
         Console.WriteLine("          mod-install <modDir>... [--server DIR] [--client DIR] [--data no] | mod-uninstall <id>... | mod-data | modhost-install <hostBuildDir>");
         Console.WriteLine("          ui-check <file|dir> [version|any] | ui-info <file> | ui-convert <in201Dir|file> <outDir>   [--mpq DIR] [--install DIR]");
-        Console.WriteLine("          import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>] [--forward +z] [--static yes] [--monster <sno>] [--fps <n>]");
+        Console.WriteLine("          import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>] [--forward +z] [--static yes] [--fps <n>]");
+        Console.WriteLine("                      [--monster new|new:<sno>|<sno>] [--display-name <text>] [--monster-type <type>] [--root-motion auto|off] [--speed walk=<ft/s>]");
+        Console.WriteLine("          string-set <modDir> <List> <Key> <Text> [--locale enUS] | string-get <List|file.stl> <Key|re:regex> | string-roundtrip");
         return cmd == "help" ? 0 : 1;
 }
 }

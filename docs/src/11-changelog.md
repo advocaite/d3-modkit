@@ -2,6 +2,17 @@
 
 API changes, newest first. The client `HostApi` only ever grows: a plugin built for version N runs on any host with version ≥ N.
 
+## 2026-11-14: monster names, own Monster SNOs, walk / run root motion, game texts
+
+- `import-gltf` (skinned) now gives the monster **its own Monster SNO** by default (`--monster new`): a copy of the template's (stats, AI, powers, loot) named like the actor. `--monster new:<sno>` copies another one; `--monster <sno>` keeps the old behaviour (use a stock one as it is). See [Monster name and type](07-game-data.md#monster-name-and-type).
+  - `--display-name <text>`: the name players see. The client looks the **Monster SNO's name** up in the StringList `Monsters`, so the import writes a copy of `enUS\StringList\Monsters.stl` with the new entry (`mod.json` `replaces`).
+  - `--monster-type <type>`: Undead, Demon, Beast, Human, … (the type line under the name, from StringList `MonsterTypes`).
+  - The copy drops the template's bestiary (lore) entry and points back at the new actor.
+- Walk / run clips: `--root-motion auto` (default) takes the root bone's travel out of the clip and stores it as the anim's root displacement and velocity, like stock walks, so the game can pace the steps. `--speed walk=<ft/s>` sets it by hand. See [Walking and running](07-game-data.md#walking-and-running).
+- Re-imports: new files of a mod get ids right after the mod's own block.
+- New commands `string-set`, `string-get`, `string-roundtrip` and the `StringListFile` reader / writer: all 5,508 stock lists rebuild byte for byte. See [Game texts](07-game-data.md#game-texts-stringlists).
+- The test golem (`custom-monster-test`) is now "Rune Golem", type Beast, with walk and run clips. Checked offline only (DevHub readers, renders, emulator parsers); **not yet tried in the game**.
+
 ## 2026-11-13: animated monsters (skinned glTF import)
 
 - `import-gltf` now imports **skinned** glTF models: skeleton, bone weights, every animation clip as an Anim SNO, an AnimSet, and a Monster actor cloned from a stock monster. The default template is `5187` `Sandling_A`. See [Animated monsters](07-game-data.md#animated-monsters-skinned-gltf).

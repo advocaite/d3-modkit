@@ -102,7 +102,9 @@ Saving writes the whole layout through the byte-exact writer: data the designer 
 
 ```
 D3ModTool import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <first id>] [--scale <s>] [--actor-scale <s>]
-                      [--forward +z|-z|+x|-x] [--static yes] [--monster <Monster SNO>] [--fps <n>] [--install DIR]
+                      [--forward +z|-z|+x|-x] [--static yes] [--fps <n>] [--install DIR]
+         skinned:     [--monster new|new:<sno|name>|<sno|name>] [--display-name <text>] [--monster-type <type>]
+                      [--root-motion auto|off] [--speed walk=<ft/s>,run=<ft/s>]
 ```
 
 A model **without a skin** becomes a static prop (this section). A model **with a skin** becomes an animated monster (next section), unless `--static yes` imports its rest pose as a prop.
@@ -135,7 +137,7 @@ The new ids are added to `mod.json` `"adds"`.
 - The base color texture must be a PNG, either embedded or a file next to a `.gltf`. Other sizes are resized to powers of two, up to 2048. `baseColorFactor` is multiplied in. A material without a texture becomes a flat colour.
 - Only the base colour is used. Normal, emissive and metallic/roughness maps are ignored.
 
-**Ids.** A re-import keeps the ids the mod's files already have. Otherwise the tool takes the first ids from `--sno` (default 600000) that are free in the game and in every mod folder next to this one. The names must not already exist in the game.
+**Ids.** A re-import keeps the ids the mod's files already have, and new files of that mod get the first free ids from its lowest id. Otherwise the tool takes the first ids from `--sno` (default 600000) that are free in the game and in every mod folder next to this one. The names must not already exist in the game.
 
 **Getting it into the game:**
 
@@ -155,12 +157,14 @@ When the glTF has a skin, `import-gltf` writes a whole monster:
 | `Appearance\<Name>.app` | The meshes with the skeleton: bone names, parents, bind pose, inverse bind pose, local transforms, and up to 3 bone weights per vertex. |
 | `Anim\<Name>_<clip>.ani` | One animation per glTF animation, resampled at `--fps` (default 30) and keyframe-reduced. |
 | `AnimSet\<Name>.ans` | Which animation the monster plays for each animation tag (idle, walk, attack, death …). |
+| `Monster\<Name>.mon` | The monster's **own Monster SNO**: a copy of the template's (stats, AI, powers, treasure) with your type. Not written with `--monster <sno>`. |
+| `enUS\StringList\Monsters.stl` | The stock list of monster names plus yours (`--display-name`); see [Monster name and type](#monster-name-and-type). |
 | `Actor\<Name>.acr` | A **Monster** actor using all of the above. Spawn this one. |
 
 **Template.** The default is `5187` (`Sandling_A`): a plain hostile melee monster with one skinned mesh, one material, 13 looks and 22 bones. `--like` picks another animated actor.
 
 The new actor keeps the template's:
-- type, Monster SNO (stats, AI, powers; `--monster <sno>` picks another existing one), tags, sounds and collision;
+- type, tags, sounds and collision, and (through its copy of the Monster SNO) stats, AI and powers;
 - looks: normal, champion, rare, invisible, and the fire, poison, holy, … deaths. Every look uses the template's shader and its generic overlay textures with your textures put in.
 
 Your model replaces its mesh, skeleton, bounds and animations, and the `Scale` tag is set to `--actor-scale`.
@@ -181,7 +185,7 @@ Texture slots that belong to the template's own UV layout are dropped: normal ma
   - Otherwise it goes on the nearest bone, scaled to your model's height.
   - Using the usual names (`Pelvis`, `Spine`, `Head`, `LUpArm`, `RHand`, `LFoot`, …) helps.
 - **Facing:** the model faces +Z in glTF (the default `--forward +z`), with Y up.
-- Clips are **in place**: root motion is not extracted, and the server moves the monster.
+- Moving clips (`walk`, `run`): animate them **with root motion**, the body travelling forward over the cycle while each foot stays planted. The importer takes the straight-line travel out of the root bone and stores it as the anim's travel; see [Walking and running](#walking-and-running).
 
 **Clip names → animation tags.** The last word of the clip name counts, so `Armature|idle` and `golem_attack` both work. Case is ignored.
 
@@ -208,7 +212,45 @@ Texture slots that belong to the template's own UV layout are dropped: normal ma
 **Example:** a test mod `custom-monster-test` holds an original stone golem: 15 bones and `idle` / `attack` / `death` clips, all made by a script.
 
 ```
-D3ModTool import-gltf golem.glb mods\custom-monster-test --name Mod_StoneGolem --sno 600120
+D3ModTool import-gltf golem.glb mods\custom-monster-test --name Mod_StoneGolem --display-name "Rune Golem" --monster-type Beast
 ```
 
-This writes actor 600120, appearance 600121, textures 600122/600123, AnimSet 600124 and anims 600125–600128. In the game, spawn it with `!spawn 600120`. It fights with the Sandling's AI and its melee attack.
+This writes actor 600120, appearance 600121, textures 600122/600123, AnimSet 600124, anims 600125–600130 (idle, attack, death, dead, walk, run), its own Monster SNO 600131 (type Beast) and the name "Rune Golem". In the game, spawn it with `!spawn 600120`. It fights with the Sandling's AI and melee attack.
+
+### Monster name and type
+
+The game shows a monster's **name** and, below it, its **type**. Both come from the monster's Monster SNO, not from the actor:
+
+- **Name:** the client takes the actor's Monster SNO, gets that SNO's **name** (`Mod_StoneGolem`), and looks it up as a key in the StringList `Monsters` of the player's language. The stock Sandling shows "Dust Imp" because `Monsters.stl` has `Sandling_A = Dust Imp`. A missing key shows an empty name.
+- **Type:** the Monster SNO's type number. Its name is the key in the StringList `MonsterTypes`:
+
+| `--monster-type` | Shows | Notes |
+|---|---|---|
+| `Undead` (0), `Demon` (1), `Beast` (2), `Human` (3) | the same word | the normal hostile types; "damage against" item affixes use them |
+| `CorruptedAngel` (9) | Reaper | |
+| `Pandemonium` (10) | Ancient Beast | |
+| `Blood Golem` (12) | Blood Golem | |
+| `Breakable` (4), `Scenery` (5), `Ally` (6), `Team` (7), `Helper` (8), `Adria` (11) | | not for enemies: the server makes Breakable a gizmo and Ally, Helper and Scenery an NPC; Adria has no text |
+
+So a monster of its own needs its own Monster SNO. That is the default, `--monster new`: a copy of the template's Monster SNO with a new id, named like the actor, pointing back at the new actor, with your `--monster-type` and without the template's bestiary (lore) entry. HP, speed, AI, powers and loot stay the template's. `--monster new:<sno|name>` copies another stock monster's instead. `--monster <sno|name>` uses a stock Monster SNO as it is; the monster then shows that monster's name and type, and `--display-name` / `--monster-type` are refused.
+
+`--display-name` adds the key to a copy of `Monsters.stl` in the mod (see [Game texts](#game-texts-stringlists)). Without it, players see the SNO name.
+
+### Walking and running
+
+Stock walk and run animations are **in place**: the skeleton does not travel. The file stores the travel separately: the root displacement for every frame and the average velocity. The Sandling's walk travels 3.9 ft over a 1 s cycle (3.9 ft/s), its run 9 ft/s. The game moves the monster, and the stored velocity is what lets it pace the steps to the movement.
+
+- With `--root-motion auto` (the default), the importer looks at every `walk` / `run` clip. When the root bone travels in it, the importer takes the straight-line travel (first frame to last) out of the root bone and stores it as that displacement and velocity. Sway and bob stay in the animation.
+- So animate a walk the natural way: the body moves forward, and each foot stays planted on the ground while it carries the weight. A looping cycle ends one stride further on, in the same pose.
+- `--speed walk=3.9,run=9` sets the stored speed (ft/s) by clip name or role, for example for a clip made in place. A speed that doesn't match the steps makes the feet slide.
+- A walk or run clip with no travel and no `--speed` gets a warning: velocity 0 gives the game nothing to pace the steps with.
+- Match the template's speeds, which the import prints (the golem: walk 3.94 ft/s, run 9.0 ft/s, like the Sandling), so the steps play at about the stock rate.
+
+## Game texts (StringLists)
+
+Every text the game shows lives in a StringList SNO (group 42), one file per list and language, in the language's folder: `enUS\StringList\Monsters.stl`. An entry is a key and a text. The client finds an entry by a hash of its key (`h = h × 33 + byte`, case-sensitive), so keys must match exactly.
+
+- To change or add a text, the mod carries the **whole list** with your entries added; it replaces the stock list (same SNO id). `D3ModTool string-set <modDir> <List> <Key> <Text>` does this. It starts from the mod's copy when there is one (so several texts add up), else from the stock list. Every stock entry stays byte-identical, and it refuses a key whose hash equals another key's. `import-gltf --display-name` uses it.
+- The reader and writer rebuild all 5,508 stock lists byte for byte (`string-roundtrip`).
+- **Languages:** the file is written for every language of the install that has the list. A US install has only `enUS`. A player whose game runs in another language reads that language's list, which a mod built on a US install doesn't have, so the name is empty for that player. Run the import or `string-set` against an install with that language (`--install`), or add the language's file.
+- Two mods that change the same list don't merge: the later mod's file wins. Put all texts of one list in one mod.

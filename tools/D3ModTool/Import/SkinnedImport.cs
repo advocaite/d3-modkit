@@ -19,8 +19,11 @@ namespace D3ModTool.Import;
 ///   <c>&lt;Name&gt;_dead</c> corpse loop made from the last death frame when the glTF has a death clip but no dead clip.</item>
 /// <item><c>AnimSet\&lt;Name&gt;.ans</c>: every tag of the template's AnimSet (plus the core monster tags) mapped to a clip by
 ///   name convention (<see cref="AnimImport"/>).</item>
-/// <item><c>Actor\&lt;Name&gt;.acr</c>: the template actor (a Monster) with the new appearance, AnimSet and bounds; it keeps the
-///   template's Monster SNO (stats, AI, powers), tags, sounds and collision.</item>
+/// <item><c>Monster\&lt;Name&gt;.mon</c> (default <c>--monster new</c>): an own copy of the template's Monster SNO (stats, AI,
+///   powers) with the type of <c>--monster-type</c>, and its display name (<c>--display-name</c>) in a copy of the locale's
+///   <c>StringList\Monsters.stl</c> (<see cref="BuildMonster"/>, <see cref="StringListFile"/>).</item>
+/// <item><c>Actor\&lt;Name&gt;.acr</c>: the template actor (a Monster) with the new appearance, AnimSet, Monster SNO and bounds; it
+///   keeps the template's tags, sounds and collision.</item>
 /// </list>
 /// Template: <c>--like</c>, default 5187 <c>Sandling_A</c> (Monster; one skinned mesh, one material, 13 looks, 22 bones, an AnimSet
 /// without a parent). Fields this tool does not understand are copied from it. Format facts: appearance_2.8.0.md, anim_2.8.0.md,
@@ -563,6 +566,44 @@ public static class SkinnedImport
         return a;
     }
 
+    // ============================================================================================ monster
+
+    /// <summary>The StringList with the monster names; the client's key is the Monster SNO's name (see <see cref="BuildMonster"/>).</summary>
+    public const string MonsterNameList = "Monsters";
+
+    /// <summary>
+    /// An own Monster SNO (group 25, format 1492, struct 1352 B; offsets from the exe's type descriptor): a copy of the source
+    /// with its id, the actor it belongs to (+16), the type (+24) when given, no lore entry (+984, group 59 Lore: the source's
+    /// bestiary page describes the source monster) and the designer label (+1216, char[128]) set to our name. Stats, attribute
+    /// modifiers (HP, walk speed [129], rift progress [58] ...), skills, AI, treasure classes, minion / champion groups and the
+    /// tag map stay the source's.
+    /// How the client names a monster (exe 2.8.0.99920, read only): the name function (0x5dad40, kind 102) takes the actor,
+    /// reads its Monster SNO (Actor +0x6c = file 124), gets that SNO's NAME from CoreTOC (group 0x19) and looks the name up in
+    /// the StringList registered as "Monsters" (52021). So the key is the Monster SNO name, and a missing key shows an empty name.
+    /// The type line is MonsterTypes.stl, keyed by the type enum's name (<see cref="MonsterTypes"/>).
+    /// </summary>
+    static byte[] BuildMonster(byte[] source, int sno, int actorSno, int? type, string label, Action<string> say)
+    {
+        if (source.Length < 16 + 1352 || I32(source, 4) != 1492) throw new InvalidDataException($"Monster SNO {I32(source, 16)} is not a 2.8.0 Monster file (format {I32(source, 4)})");
+        var m = (byte[])source.Clone();
+        const int S = 16;
+        W32(m, S + 0, sno);
+        W32(m, S + 16, actorSno);
+        if (type is int ty) W32(m, S + 24, ty);
+        if (I32(m, S + 984) > 0) { say($"Monster: lore entry {I32(m, S + 984)} of the source dropped"); W32(m, S + 984, -1); }
+        Array.Clear(m, S + 1216, 128);
+        Encoding.ASCII.GetBytes(label.Length > 127 ? label[..127] : label).CopyTo(m, S + 1216);
+        return m;
+    }
+
+    static int ResolveSno(D3Storage d3, int group, string s, string what)
+    {
+        if (int.TryParse(s, out int id)) return id;
+        var e = d3.Toc.InGroup(group).FirstOrDefault(x => x.Name.Equals(s, StringComparison.OrdinalIgnoreCase));
+        if (e.Name == null) throw new ArgumentException($"{what}: no {SnoGroups.Name(group)} named '{s}'");
+        return e.Id;
+    }
+
     internal static float ScaleTag(byte[] actor)
     {
         float s = 1;
@@ -598,8 +639,16 @@ public static class SkinnedImport
         d3.Toc.TryGetName(ActorGroup, templateActor, out var tName);
         if (animSetT <= 0) throw new InvalidDataException($"template actor {templateActor} {tName} has no AnimSet; use an animated monster (default {DefaultTemplateActor})");
         if (typeT != 1) say($"warning: template actor {templateActor} is type {typeT}, not a Monster (1)");
-        int monster = o.MonsterSno ?? monsterT;
-        if (o.MonsterSno is int ms && d3.SnoEntries(MonsterGroup, ms).Count == 0) throw new ArgumentException($"--monster {ms} is not a Monster SNO in the game");
+        // ---- Monster SNO: an own copy (default) or a stock one used as it is ----
+        string monArg = string.IsNullOrWhiteSpace(o.Monster) ? "new" : o.Monster.Trim();
+        bool ownMonster = monArg.Equals("new", StringComparison.OrdinalIgnoreCase) || monArg.StartsWith("new:", StringComparison.OrdinalIgnoreCase);
+        int monster = monArg.Equals("new", StringComparison.OrdinalIgnoreCase) ? monsterT
+            : ResolveSno(d3, MonsterGroup, ownMonster ? monArg[4..] : monArg, "--monster");
+        if (monster <= 0 || d3.SnoEntries(MonsterGroup, monster).Count == 0)
+            throw new ArgumentException($"Monster SNO {monster} is not in the game{(monArg == "new" ? $" (template actor {templateActor} has none; give --monster new:<sno>)" : "")}");
+        if (!ownMonster && (o.DisplayName != null || o.MonsterType != null))
+            throw new ArgumentException("--display-name / --monster-type need an own Monster SNO (--monster new): the name and type belong to the Monster SNO, and a stock one is shared by every monster that uses it");
+        int? monType = o.MonsterType == null ? null : MonsterTypes.Parse(o.MonsterType);
         var t = new SkinTemplate(Read(d3, AppearanceGroup, appT));
         var setT = Read(d3, AnimSetGroup, animSetT);
         float tplScale = ScaleTag(actorT);
@@ -614,6 +663,7 @@ public static class SkinnedImport
         var usedMats = model.Primitives.Select(p => p.Material).Distinct().ToList();
         var subs = BuildMeshes(model, sk, map, usedMats, say);
         var clips = AnimImport.Sample(model, sk, map, o.Fps, say);
+        AnimImport.ApplyRootMotion(clips, sk, !o.RootMotion.Equals("off", StringComparison.OrdinalIgnoreCase), o.Speeds, say);
 
         // ---- names / ids ----
         string Tex(int i, string kind) => usedMats.Count == 1 ? $"{o.Name}_{kind}" : $"{o.Name}_{i}_{kind}";
@@ -625,6 +675,7 @@ public static class SkinnedImport
         }
         names.Add((AnimSetGroup, o.Name));
         foreach (var c in clips) names.Add((AnimGroup, c.SnoName = UniqueName(names, $"{o.Name}_{SafeName(c.Name, 40).Replace(' ', '_').Replace('|', '_').Replace('.', '_').Replace('-', '_')}")));
+        if (ownMonster) names.Add((MonsterGroup, o.Name));
         var ids = AllocateIds(d3, o, names, say);
 
         var data = Path.Combine(o.ModDir, "data", "Base");
@@ -703,12 +754,33 @@ public static class SkinnedImport
         float tplHeight = 2 * t.Extent.Z * tplScale;
         float sizeRatio = height * o.ActorScale / Math.Max(1e-3f, tplHeight);
         int actorSno = ids[(ActorGroup, o.Name)];
-        Write(ActorGroup, o.Name, BuildActor(actorT, actorSno, appSno, setSno, monster, app, sizeRatio, o.ActorScale, say));
+        int monsterSno = monster;
+        var replaced = new List<(int Group, int Sno, string Name, string Locale)>();
+        if (ownMonster)
+        {
+            // ---- own Monster SNO + its display name ----
+            monsterSno = ids[(MonsterGroup, o.Name)];
+            d3.Toc.TryGetName(MonsterGroup, monster, out var srcName);
+            Write(MonsterGroup, o.Name, BuildMonster(Read(d3, MonsterGroup, monster), monsterSno, actorSno, monType, o.Name, say));
+            string shown = o.DisplayName ?? o.Name;
+            if (o.DisplayName == null) say($"warning: no --display-name; players see '{shown}'");
+            int typeShown = monType ?? I32(Read(d3, MonsterGroup, monster), 16 + 24);
+            say($"Monster {monsterSno} {o.Name}: a copy of {monster} {srcName} (stats, AI, powers, treasure), type {MonsterTypes.Name(typeShown)} ('{MonsterTypes.Text(d3, typeShown)}' in the game)");
+            foreach (var (loc, sno, path) in StringListFile.SetInMod(d3, o.ModDir, MonsterNameList, o.Name, shown, null, say))
+                replaced.Add((StringListFile.Group, sno, MonsterNameList, loc));
+        }
+        else
+        {
+            d3.Toc.TryGetName(MonsterGroup, monster, out var mn);
+            say($"Monster {monster} {mn} is used as it is: the monster shows that monster's name and type");
+        }
+        Write(ActorGroup, o.Name, BuildActor(actorT, actorSno, appSno, setSno, monsterSno, app, sizeRatio, o.ActorScale, say));
 
-        UpdateModJson(o.ModDir, written, say);
+        UpdateModJson(o.ModDir, written, say, replaced);
         foreach (var w in written) say($"{SnoGroups.Name(w.Group),-10} {w.Sno,7} {w.Name,-32} {w.Size,9:N0} B  {Path.GetRelativePath(o.ModDir, w.Path)}");
         foreach (var h in hps) say($"hardpoint {h.Name,-20} -> {h.Source}");
-        foreach (var c in clips) say($"clip {c.Name,-12} -> Anim {animIds[c]} {c.SnoName}: {c.Frames} frames @ {c.FramesPerTick * 60:0.#} fps, {(c.Loop ? "loops" : "plays once")}, role {c.Role}, {c.KeyCount} keys, fields from anim {c.TemplateAnim}");
+        foreach (var c in clips) say($"clip {c.Name,-12} -> Anim {animIds[c]} {c.SnoName}: {c.Frames} frames @ {c.FramesPerTick * 60:0.#} fps, {(c.Loop ? "loops" : "plays once")}, role {c.Role}, {c.KeyCount} keys, fields from anim {c.TemplateAnim}" +
+            (c.Velocity != Vector3.Zero ? $", moves {c.Velocity.Length() * 60:0.##} ft/s" : ""));
         var (cc, e) = (app.Center, app.Extent);
         say($"model: {subs.Sum(s => s.VertexCount)} vertices, {subs.Sum(s => s.Indices.Length / 3)} triangles, {subs.Count} mesh(es), {sk.Bones.Count} bones, {clips.Count} anims; bounds (feet) x {cc.X - e.X:F2}..{cc.X + e.X:F2}, y {cc.Y - e.Y:F2}..{cc.Y + e.Y:F2}, z {cc.Z - e.Z:F2}..{cc.Z + e.Z:F2}");
         say($"next: D3ModTool mod-install {o.ModDir} --client <game copy> (or mod-build), restart the server, then spawn actor {actorSno} (e.g. !spawn {actorSno})");
@@ -720,6 +792,38 @@ public static class SkinnedImport
         string r = n; int k = 2;
         while (names.Any(x => x.Group == AnimGroup && x.Name.Equals(r, StringComparison.OrdinalIgnoreCase))) r = $"{n}{k++}";
         return r;
+    }
+}
+
+/// <summary>
+/// Monster types (Monster +24). Names = the client's enum symbol table (exe 0x108e140), which is also the key the client looks
+/// up in StringList MonsterTypes (226433) for the type line under the name: 0 Undead, 1 Demon, 2 Beast, 3 Human, 4 Breakable,
+/// 5 Scenery, 6 Ally, 7 Team, 8 Helper, 9 CorruptedAngel ("Reaper"), 10 Pandemonium ("Ancient Beast"), 11 Adria (no text),
+/// 12 "Blood Golem". Server (emulator ActorFactory): Breakable -> Gizmo; Ally, Helper, Scenery -> NPC; the rest -> Monster.
+/// </summary>
+public static class MonsterTypes
+{
+    public static readonly string[] Names = { "Undead", "Demon", "Beast", "Human", "Breakable", "Scenery", "Ally", "Team", "Helper", "CorruptedAngel", "Pandemonium", "Adria", "Blood Golem" };
+
+    public static int Parse(string s)
+    {
+        if (int.TryParse(s, out int n) && n >= 0 && n < Names.Length) return n;
+        string k = s.Replace(" ", "").Replace("_", "");
+        for (int i = 0; i < Names.Length; i++) if (Names[i].Replace(" ", "").Equals(k, StringComparison.OrdinalIgnoreCase)) return i;
+        if (k.Equals("Reaper", StringComparison.OrdinalIgnoreCase)) return 9;
+        if (k.Equals("AncientBeast", StringComparison.OrdinalIgnoreCase)) return 10;
+        throw new ArgumentException($"--monster-type: '{s}' is not one of {string.Join(", ", Names)} (or 0-{Names.Length - 1})");
+    }
+
+    public static string Name(int t) => t >= 0 && t < Names.Length ? Names[t] : $"type {t}";
+
+    /// <summary>The type line the game shows (enUS MonsterTypes.stl), "" when the list has no entry.</summary>
+    public static string Text(D3Storage d3, int t)
+    {
+        if (t < 0 || t >= Names.Length) return "";
+        var toc = d3.Toc.InGroup(StringListFile.Group).FirstOrDefault(e => e.Name == "MonsterTypes");
+        var f = toc.Name == null ? null : d3.SnoEntries(StringListFile.Group, toc.Id).FirstOrDefault(e => e.Directory == "enUS");
+        return f == null ? "?" : new StringListFile(d3.Read(f)).Get(Names[t]) ?? "";
     }
 }
 

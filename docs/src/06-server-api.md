@@ -2,6 +2,8 @@
 
 A server part is a .NET 8 class library that references the server's `Blizzless.dll` with `Private=false`, so the mod doesn't ship its own copy. At startup the server loads every `Mods\<id>\server\*.dll`, or the `server.assembly` from `mod.json`, into its own process.
 
+The server also lists mods that have **game data only**. Those are mods installed in the game copy it reads its data from, `<GameInstallPath>\Mods\<id>`, where `mod-install --client` puts them. Their new or replaced files are already built into that copy's storage, so the server reads them as normal game data, and nothing is loaded for them. The console shows, for example, `Mod loaded: Custom prop test 0.1.0 (custom-prop-test) - game data only: 3 new, 0 replaced game file(s)`. A mod with both a server part and game data is listed once, with the note `game data active too`.
+
 The namespace is `DiIiS_NA.Mods`.
 
 ## IServerMod

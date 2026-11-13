@@ -6,7 +6,8 @@ API changes, newest first. The client `HostApi` only ever grows: a plugin built 
 
 - New command `D3ModTool import-gltf`: it turns a glTF model into a new static prop (texture, appearance and actor SNOs). See [Game data](07-game-data.md#models-import-gltf).
   - It reads the model (`.glb` or `.gltf`) and PNG textures, encodes DXT1/DXT5 with mips, and rebuilds a stock template appearance and actor around the new mesh.
-  - Verified offline: the files build into the game copy, read back through both CASC readers, parse in the appearance reader and render correctly. **Loading in the game is still to be confirmed.**
+  - **Works in the game:** an original test prop shows up both with `!spawn` and when placed with the world editor. The template must be a ServerProp; the default is now `61743`. The client ignores Environment actors sent by the server.
+- Server: the startup log now also lists mods that have game data only, installed in the game copy the server reads (see [Server API](06-server-api.md)).
 - `TexFile.Create`: writes a texture SNO in any format the reader knows, with a mip chain. `CreateBgra8` now uses it, and its output is unchanged.
 
 ## 2026-11-11: UI designer (first version)

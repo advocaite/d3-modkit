@@ -93,6 +93,49 @@ Saving writes the whole layout through the byte-exact writer: data the designer 
 
 ## Art and other assets
 
-New textures and models need the game's own formats. Converting from PNG and common model formats is planned (see the [changelog](11-changelog.md)).
+- **UI art:** the designer's **Import PNG…** (above) makes a new `2DUI_` texture.
+- **Static props (3D models):** `import-gltf` (below) turns a glTF model into a new actor.
+- A mod can also draw any **stock** texture by name with `draw_texture`, and replace stock files with edited copies.
 
-Until then, a mod can draw any **stock** texture by name with `draw_texture`, and replace stock files with edited copies.
+## Models: `import-gltf`
+
+```
+D3ModTool import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--install DIR]
+```
+
+It turns a glTF 2.0 model into a **static prop** and writes three kinds of SNO files into the mod's `data\Base\` folder:
+
+| File | What |
+|---|---|
+| `Textures\<Name>_diff.tex` | One texture per material. It is DXT1, or DXT5 when the image has transparency, with a full mip chain down to a 4-pixel side. |
+| `Appearance\<Name>.app` | The mesh, with one sub-object per glTF primitive and one material per glTF material. The texture goes in the diffuse slot. |
+| `Actor\<Name>.acr` | An actor that uses the appearance. Spawn this one in the game. |
+
+The new ids are added to `mod.json` `"adds"`.
+
+**Template.** Every field the tool does not understand is copied from a stock prop, so the new files differ from a known-good file only where they have to.
+
+- `--like` names the template actor, by SNO id or name. The default is `61743` (`a2dun_Aqd_Act_Post_B_02_Base`): a non-interactive **ServerProp** with one mesh, no bones and one diffuse texture.
+- The template must be a type the server can spawn, such as ServerProp. **Environment props don't work:** the client places those itself from the scene data and ignores the server's copy, so they never appear. That's why `433` (`Skeleton_1H_bonePile`) can't be used. Confirmed in game on 2026-11-13: an obelisk built on `61743` shows up both with `!spawn` and when placed with the world editor.
+- The template must be that simple: one look, one material, one unskinned mesh, no bones, no collision or physics data. The tool refuses any other template.
+- Templates are read from the official install, which is only ever read.
+- The actor keeps the template's type, tags and collision settings. Its bounds are recomputed. Its PhysMesh is cleared. The `Scale` tag is set to `--actor-scale` (default 1).
+
+**Input rules.**
+
+- glTF space: Y up, metres, counter-clockwise front faces, as Blender's exporter writes it.
+- The game is Z up, in feet. `--scale` defaults to 3.28084 (metres to feet). Use `--scale 1` for a model made in feet.
+- Node transforms are applied. Skins, animations, morph targets and texture transforms are ignored, with a warning.
+- Each primitive needs `POSITION`. `NORMAL` is optional (smooth normals are computed when it is missing), and so is `TEXCOORD_0`. A sub-object holds at most 65,535 vertices.
+- The base color texture must be a PNG, either embedded or a file next to a `.gltf`. Other sizes are resized to powers of two, up to 2048. `baseColorFactor` is multiplied in. A material without a texture becomes a flat colour.
+- Only the base colour is used. Normal, emissive and metallic/roughness maps are ignored.
+
+**Ids.** A re-import keeps the ids the mod's files already have. Otherwise the tool takes the first ids from `--sno` (default 600000) that are free in the game and in every mod folder next to this one. The names must not already exist in the game.
+
+**Getting it into the game:**
+
+1. `mod-install <modDir> --client <game copy>` builds it into the game copy.
+2. Point the server's `[Storage] GameInstallPath` at the same game copy, so it knows the new actor.
+3. Spawn the actor, e.g. GM command `!spawn <actor id>`, or place it with the DevHub world editor.
+
+The new actor is not interactive and has no collision mesh.

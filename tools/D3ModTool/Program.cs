@@ -229,6 +229,24 @@ switch (cmd)
         Console.WriteLine($"{positional[2]}: property {positional[3]} = {positional[4]}");
         return 0;
     }
+    case "import-gltf":
+    {
+        // import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--install DIR]
+        if (positional.Count < 3 || !options.ContainsKey("--name"))
+        {
+            Console.WriteLine("usage: import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--install DIR]");
+            return 1;
+        }
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return D3ModTool.Import.ModelImport.Run(new D3ModTool.Import.ModelImport.Options
+        {
+            Input = positional[1], ModDir = Path.GetFullPath(positional[2]), Name = options["--name"],
+            Like = options.GetValueOrDefault("--like"), Install = options.GetValueOrDefault("--install"),
+            FirstSno = options.TryGetValue("--sno", out var sn) ? int.Parse(sn) : null,
+            Scale = options.TryGetValue("--scale", out var sc) ? float.Parse(sc, ci) : 3.28084f,
+            ActorScale = options.TryGetValue("--actor-scale", out var asc) ? float.Parse(asc, ci) : 1f,
+        }, Console.WriteLine);
+    }
     case "casc-selftest":
         // casc-selftest [client]: every CASC writer must rebuild the stock files byte for byte
         return D3ModTool.Casc.ModBuild.SelfTest(positional.Count > 1 ? positional[1] : D3ModTool.Casc.ModBuild.OfficialInstall, Console.WriteLine);
@@ -282,6 +300,7 @@ switch (cmd)
         Console.WriteLine("          casc-selftest [client] | mod-build <modDir>... [--client DIR] | mod-verify | mod-restore   (client: --client or %D3_CLIENT_DIR%)");
         Console.WriteLine("          mod-install <modDir>... [--server DIR] [--client DIR] [--data no] | mod-uninstall <id>... | mod-data | modhost-install <hostBuildDir>");
         Console.WriteLine("          ui-check <file|dir> [version|any] | ui-info <file> | ui-convert <in201Dir|file> <outDir>   [--mpq DIR] [--install DIR]");
+        Console.WriteLine("          import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>]");
         return cmd == "help" ? 0 : 1;
 }
 }

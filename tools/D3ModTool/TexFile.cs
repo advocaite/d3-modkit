@@ -337,19 +337,51 @@ public sealed class TexFile
         IReadOnlyList<(string Name, int X, int Y, int W, int H)> frames, TexFile? template = null)
     {
         if (rgba.Length != width * height * 4) throw new ArgumentException("rgba size != width*height*4");
+        var bgra = new byte[width * height * 4];
+        for (int i = 0; i < width * height; i++)
+        {
+            bgra[i * 4] = rgba[i * 4 + 2]; bgra[i * 4 + 1] = rgba[i * 4 + 1];
+            bgra[i * 4 + 2] = rgba[i * 4]; bgra[i * 4 + 3] = rgba[i * 4 + 3];
+        }
+        return Create(snoId, PixelFormat.Bgra8, width, height, new[] { bgra }, frames, template, Png.Crc32(rgba));
+    }
+
+    /// <summary>
+    /// Builds a texture SNO with the stock layout (see the class summary) from mips that are already in the stored form: BGRA8
+    /// bytes for <see cref="PixelFormat.Bgra8"/>, PLANAR blocks for DXT (use <see cref="Deinterleave"/> on standard BCn blocks).
+    /// Mip i must be <see cref="MipByteSize"/>(w >> i, h >> i) bytes. 0x230-0x27F (meaning unknown) come from <paramref name="template"/>
+    /// (a stock texture of the same use); 0x278 is then set to <paramref name="contentHash"/> (stock: identical art shares the value,
+    /// so pass something unique, e.g. a CRC32 of the source pixels).
+    /// </summary>
+    public static byte[] Create(int snoId, PixelFormat format, int width, int height, IReadOnlyList<byte[]> mips,
+        IReadOnlyList<(string Name, int X, int Y, int W, int H)> frames, TexFile? template, uint contentHash)
+    {
+        if (mips.Count == 0 || mips.Count > MipSlots) throw new ArgumentException($"{mips.Count} mips (1..{MipSlots})");
+        for (int i = 0; i < mips.Count; i++)
+        {
+            int need = MipByteSize(format, Math.Max(1, width >> i), Math.Max(1, height >> i));
+            if (need < 0) throw new NotSupportedException($"pixel format {format}");
+            if (mips[i].Length != need) throw new ArgumentException($"mip {i} is {mips[i].Length} bytes, format {format} {Math.Max(1, width >> i)}x{Math.Max(1, height >> i)} needs {need}");
+        }
         if (frames.Count == 0) frames = new[] { ("", 0, 0, width, height) };
         int n = frames.Count;
         int indexAt = HeaderSize, framesAt = (indexAt + 4 * n + 7) & ~7, pixelsAt = framesAt + n * FrameSize;
-        var b = new byte[pixelsAt + width * height * 4];
+        var b = new byte[pixelsAt + mips.Sum(m => m.Length)];
         var s = b.AsSpan();
         if (template != null) template.Bytes.AsSpan(0x230, HeaderSize - 0x230).CopyTo(s[0x230..]);
         void W(int at, int v) => BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(at), v);
         BinaryPrimitives.WriteUInt32LittleEndian(s, Magic);
         W(4, Version280);
         W(0x10, snoId);
-        W(FormatAt, (int)PixelFormat.Bgra8); W(WidthAt, width); W(HeightAt, height);
-        W(FaceCountAt, 1); W(MipFirstAt, 0); W(MipLastAt, 0);
-        W(MipTableAt, pixelsAt - 16); W(MipTableAt + 4, width * height * 4);
+        W(FormatAt, (int)format); W(WidthAt, width); W(HeightAt, height);
+        W(FaceCountAt, 1); W(MipFirstAt, 0); W(MipLastAt, mips.Count - 1);
+        int pos = pixelsAt;
+        for (int i = 0; i < mips.Count; i++)
+        {
+            W(MipTableAt + 8 * i, pos - 16); W(MipTableAt + 8 * i + 4, mips[i].Length);
+            mips[i].CopyTo(b, pos);
+            pos += mips[i].Length;
+        }
         W(FrameCountAt, n); W(FrameArrayAt, framesAt - 16); W(FrameArrayAt + 4, n * FrameSize);
         W(FrameIndexArrayAt, indexAt - 16); W(FrameIndexArrayAt + 4, 4 * n);
         for (int i = 0; i < n; i++)
@@ -365,12 +397,7 @@ public sealed class TexFile
             BinaryPrimitives.WriteSingleLittleEndian(s[(r + 72)..], (float)(x + w) / width);
             BinaryPrimitives.WriteSingleLittleEndian(s[(r + 76)..], (float)(y + h) / height);
         }
-        for (int i = 0; i < width * height; i++)
-        {
-            b[pixelsAt + i * 4] = rgba[i * 4 + 2]; b[pixelsAt + i * 4 + 1] = rgba[i * 4 + 1];
-            b[pixelsAt + i * 4 + 2] = rgba[i * 4]; b[pixelsAt + i * 4 + 3] = rgba[i * 4 + 3];
-        }
-        BinaryPrimitives.WriteUInt32LittleEndian(s[HashAt..], Png.Crc32(rgba));
+        BinaryPrimitives.WriteUInt32LittleEndian(s[HashAt..], contentHash);
         return b;
     }
 }

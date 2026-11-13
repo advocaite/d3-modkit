@@ -2,6 +2,13 @@
 
 API changes, newest first. The client `HostApi` only ever grows: a plugin built for version N runs on any host with version ≥ N.
 
+## 2026-11-13: model import (first version)
+
+- New command `D3ModTool import-gltf`: it turns a glTF model into a new static prop (texture, appearance and actor SNOs). See [Game data](07-game-data.md#models-import-gltf).
+  - It reads the model (`.glb` or `.gltf`) and PNG textures, encodes DXT1/DXT5 with mips, and rebuilds a stock template appearance and actor around the new mesh.
+  - Verified offline: the files build into the game copy, read back through both CASC readers, parse in the appearance reader and render correctly. **Loading in the game is still to be confirmed.**
+- `TexFile.Create`: writes a texture SNO in any format the reader knows, with a mip chain. `CreateBgra8` now uses it, and its output is unchanged.
+
 ## 2026-11-11: UI designer (first version)
 
 - `D3ModTool ui-designer`: a visual layout editor (a local web app); see [Game data](07-game-data.md#ui-designer).
@@ -53,4 +60,4 @@ API changes, newest first. The client `HostApi` only ever grows: a plugin built 
 
 - More server hooks: item drops, experience, monster spawns, player events.
 - A UI designer: open, edit and create `.ui` layouts visually, with texture preview.
-- Asset import: PNG → game textures, so mods can bring new art.
+- Asset import: skinned and animated models, more material slots (normal, glow), collision meshes.

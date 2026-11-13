@@ -231,12 +231,11 @@ switch (cmd)
     }
     case "import-gltf":
     {
-        // import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--install DIR]
-        if (positional.Count < 3 || !options.ContainsKey("--name"))
-        {
-            Console.WriteLine("usage: import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--install DIR]");
-            return 1;
-        }
+        // import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>]
+        //             [--forward +z|-z|+x|-x] [--static yes] [--monster <Monster SNO>] [--fps <n>] [--install DIR]
+        // a skinned glTF becomes an animated monster (skeleton, Anims, AnimSet, Monster actor), anything else a static prop
+        const string usage = "usage: import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor SNO|name>] [--sno <first id>] [--scale <s>] [--actor-scale <s>] [--forward +z|-z|+x|-x] [--static yes] [--monster <Monster SNO>] [--fps <n>] [--install DIR]";
+        if (positional.Count < 3 || !options.ContainsKey("--name")) { Console.WriteLine(usage); return 1; }
         var ci = System.Globalization.CultureInfo.InvariantCulture;
         return D3ModTool.Import.ModelImport.Run(new D3ModTool.Import.ModelImport.Options
         {
@@ -245,6 +244,10 @@ switch (cmd)
             FirstSno = options.TryGetValue("--sno", out var sn) ? int.Parse(sn) : null,
             Scale = options.TryGetValue("--scale", out var sc) ? float.Parse(sc, ci) : 3.28084f,
             ActorScale = options.TryGetValue("--actor-scale", out var asc) ? float.Parse(asc, ci) : 1f,
+            Forward = options.GetValueOrDefault("--forward"),
+            Static = Opt("--static", "no").Equals("yes", StringComparison.OrdinalIgnoreCase),
+            MonsterSno = options.TryGetValue("--monster", out var mo) ? int.Parse(mo) : null,
+            Fps = options.TryGetValue("--fps", out var fp) ? float.Parse(fp, ci) : 30f,
         }, Console.WriteLine);
     }
     case "casc-selftest":
@@ -300,7 +303,7 @@ switch (cmd)
         Console.WriteLine("          casc-selftest [client] | mod-build <modDir>... [--client DIR] | mod-verify | mod-restore   (client: --client or %D3_CLIENT_DIR%)");
         Console.WriteLine("          mod-install <modDir>... [--server DIR] [--client DIR] [--data no] | mod-uninstall <id>... | mod-data | modhost-install <hostBuildDir>");
         Console.WriteLine("          ui-check <file|dir> [version|any] | ui-info <file> | ui-convert <in201Dir|file> <outDir>   [--mpq DIR] [--install DIR]");
-        Console.WriteLine("          import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>]");
+        Console.WriteLine("          import-gltf <model.glb|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>] [--forward +z] [--static yes] [--monster <sno>] [--fps <n>]");
         return cmd == "help" ? 0 : 1;
 }
 }

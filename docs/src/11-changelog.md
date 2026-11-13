@@ -2,6 +2,17 @@
 
 API changes, newest first. The client `HostApi` only ever grows: a plugin built for version N runs on any host with version ≥ N.
 
+## 2026-11-13: animated monsters (skinned glTF import)
+
+- `import-gltf` now imports **skinned** glTF models: skeleton, bone weights, every animation clip as an Anim SNO, an AnimSet, and a Monster actor cloned from a stock monster. The default template is `5187` `Sandling_A`. See [Animated monsters](07-game-data.md#animated-monsters-skinned-gltf).
+  - Clip names map to animation tags by a fixed convention (`idle`, `walk`, `run`, `attack`, `hit`, `stunned`, `death`, `dead`, `spawn`, or a tag name). Every tag the template uses is filled.
+  - The glTF emissive texture becomes the glow map.
+  - Hardpoints are taken from glTF `HP_…` nodes or mapped from the template by bone name.
+  - New options: `--forward`, `--static yes`, `--monster`, `--fps`.
+  - Checked offline: DevHub's readers parse all files with no warnings, an animated render deforms cleanly, and the emulator's own parsers load the actor, AnimSet and anims. **Not yet tried in the game.**
+- Static props are unchanged: re-importing the rune obelisk gives byte-identical files.
+- The glTF reader now keeps the node tree, skins (JOINTS_0 / WEIGHTS_0, inverse bind matrices), animations (LINEAR, STEP and CUBICSPLINE) and the emissive texture.
+
 ## 2026-11-13: model import (first version)
 
 - New command `D3ModTool import-gltf`: it turns a glTF model into a new static prop (texture, appearance and actor SNOs). See [Game data](07-game-data.md#models-import-gltf).

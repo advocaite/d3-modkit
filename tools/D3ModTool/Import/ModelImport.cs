@@ -8,7 +8,8 @@ using D3Casc;
 namespace D3ModTool.Import;
 
 /// <summary>
-/// <c>import-gltf</c>: a glTF model -> a new static prop for the game, written into a mod's <c>data\</c> folder:
+/// <c>import-gltf</c>: a glTF model -> a new static prop for the game, written into a mod's <c>data\</c> folder (a skinned
+/// glTF goes to <see cref="SkinnedImport"/> instead: skeleton, animations, AnimSet and a Monster actor):
 /// <list type="bullet">
 /// <item><c>Base\Textures\&lt;Name&gt;_diff.tex</c> (one per material): DXT1 (format 9, or DXT5 = 12 when the image has alpha), full
 ///   mip chain down to a 4-pixel side, header fields 0x230-0x27F from the template's diffuse texture.</item>
@@ -37,14 +38,26 @@ public static class ModelImport
         public int? FirstSno;
         public float Scale = 3.28084f;          // glTF metres -> D3 feet
         public float ActorScale = 1f;
+        /// <summary>The glTF axis the model faces (<see cref="AxisMap"/>); null = +z for skinned models, +x for static ones.</summary>
+        public string? Forward;
+        /// <summary>Import a skinned glTF as a static prop in its rest pose.</summary>
+        public bool Static;
+        /// <summary>Skinned import: the Monster SNO the new actor uses (default: the template actor's).</summary>
+        public int? MonsterSno;
+        /// <summary>Skinned import: animation sample rate (frames per second; D3 stores frames per game tick = fps / 60).</summary>
+        public float Fps = 30f;
     }
 
     public static int Run(Options o, Action<string> say)
     {
-        if (!System.Text.RegularExpressions.Regex.IsMatch(o.Name, "^[A-Za-z][A-Za-z0-9_]{0,55}$"))
-            throw new ArgumentException("--name must be 1-56 characters: a letter, then letters, digits or _");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(o.Name, "^[A-Za-z][A-Za-z0-9_]{0,47}$"))
+            throw new ArgumentException("--name must be 1-48 characters: a letter, then letters, digits or _");
         var model = GltfModel.Load(o.Input);
         foreach (var w in model.Warnings) say("warning: " + w);
+        if (model.HasSkin && !o.Static) return SkinnedImport.Run(o, model, say);
+        if (model.Skins.Count > 0) say("warning: skins are ignored (static import of the rest pose; drop --static to import a monster)");
+        if (model.Animations.Count > 0) say("warning: animations are ignored (static prop)");
+        var map = new AxisMap(o.Forward ?? "+x", o.Scale);
 
         using var d3 = D3Storage.Open(D3Storage.ResolveInstall(o.Install));
         int templateActor = ResolveActor(d3, o.Like);
@@ -92,7 +105,7 @@ public static class ModelImport
         {
             int mi = usedMats.IndexOf(p.Material);
             var matName = SafeName(p.Material >= 0 && p.Material < model.Materials.Count ? model.Materials[p.Material].Name : "default", 120);
-            subs.Add(SubMesh.From(p, o.Scale, mi, matName));
+            subs.Add(SubMesh.From(p, map, mi, matName));
         }
         var matNames = usedMats.Select((m, i) => subs.First(s => s.MaterialIndex == i).MaterialName).ToList();
         int appSno = ids[(AppearanceGroup, o.Name)];
@@ -113,16 +126,16 @@ public static class ModelImport
 
     // ------------------------------------------------------------------------------------------------ ids
 
-    static int ResolveActor(D3Storage d3, string? like)
+    internal static int ResolveActor(D3Storage d3, string? like, int defaultActor = DefaultTemplateActor)
     {
-        if (string.IsNullOrEmpty(like)) return DefaultTemplateActor;
+        if (string.IsNullOrEmpty(like)) return defaultActor;
         if (int.TryParse(like, out int id)) return id;
         var e = d3.Toc.InGroup(ActorGroup).FirstOrDefault(x => x.Name.Equals(like, StringComparison.OrdinalIgnoreCase));
         if (e.Name == null) throw new ArgumentException($"no actor named '{like}'");
         return e.Id;
     }
 
-    static byte[] Read(D3Storage d3, int group, int sno)
+    internal static byte[] Read(D3Storage d3, int group, int sno)
     {
         var f = d3.SnoEntries(group, sno);
         if (f.Count == 0) throw new FileNotFoundException($"{SnoGroups.Name(group)} SNO {sno} is not in {d3.InstallPath}");
@@ -134,7 +147,7 @@ public static class ModelImport
     /// 600000, the "core" block of MODDING.md §4.4) that are in no CoreTOC group and in no SNO file of any mod next to this one.
     /// The names must not exist in the game (CoreTOC) for their group.
     /// </summary>
-    static Dictionary<(int, string), int> AllocateIds(D3Storage d3, Options o, List<(int Group, string Name)> names, Action<string> say)
+    internal static Dictionary<(int, string), int> AllocateIds(D3Storage d3, Options o, List<(int Group, string Name)> names, Action<string> say)
     {
         var used = d3.Toc.Entries.Select(e => e.Id).ToHashSet();
         var mine = new Dictionary<(int, string), int>();
@@ -175,19 +188,24 @@ public static class ModelImport
 
     // ------------------------------------------------------------------------------------------------ texture
 
-    static byte[] BuildTexture(int sno, GltfModel.Material? mat, TexFile template, Action<string> say)
+    internal static byte[] BuildTexture(int sno, GltfModel.Material? mat, TexFile template, Action<string> say)
     {
-        int w, h;
-        byte[] rgba;
-        if (mat?.Rgba != null) (w, h, rgba) = (mat.Width, mat.Height, mat.Rgba);
-        else
-        {
-            // no texture: a flat 4x4 of the base color
-            var c = mat?.BaseColor ?? new float[] { 0.7f, 0.7f, 0.7f, 1 };
-            (w, h) = (4, 4);
-            rgba = new byte[64];
-            for (int i = 0; i < 16; i++) for (int k = 0; k < 4; k++) rgba[i * 4 + k] = (byte)Math.Clamp((int)MathF.Round(c[k] * 255), 0, 255);
-        }
+        if (mat?.Rgba != null) return BuildTexture(sno, mat.Width, mat.Height, mat.Rgba, template, say);
+        // no texture: a flat 4x4 of the base color
+        var c = mat?.BaseColor ?? new float[] { 0.7f, 0.7f, 0.7f, 1 };
+        return BuildTexture(sno, 4, 4, Flat(c), template, say);
+    }
+
+    /// <summary>A 4x4 RGBA image of one colour (components 0..1).</summary>
+    internal static byte[] Flat(float[] c)
+    {
+        var rgba = new byte[64];
+        for (int i = 0; i < 16; i++) for (int k = 0; k < 4; k++) rgba[i * 4 + k] = (byte)Math.Clamp((int)MathF.Round((k < c.Length ? c[k] : 1) * 255), 0, 255);
+        return rgba;
+    }
+
+    internal static byte[] BuildTexture(int sno, int w, int h, byte[] rgba, TexFile template, Action<string> say)
+    {
         int pw = Pow2(w), ph = Pow2(h);
         if (pw != w || ph != h)
         {
@@ -259,7 +277,7 @@ public static class ModelImport
         }
     }
 
-    /// <summary>One D3 sub-object: FatVertex bytes are produced by <see cref="BuildAppearance"/>.</summary>
+    /// <summary>One D3 sub-object: FatVertex bytes are produced by <see cref="BuildAppearance"/> (or the skinned writer).</summary>
     public sealed class SubMesh
     {
         public string Name = "", MaterialName = "";
@@ -267,19 +285,28 @@ public static class ModelImport
         public Vector3[] Pos = Array.Empty<Vector3>(), Nrm = Array.Empty<Vector3>(), Tan = Array.Empty<Vector3>();
         public Vector2[] Uv = Array.Empty<Vector2>();
         public ushort[] Indices = Array.Empty<ushort>();
+        /// <summary>Skinned meshes: 3 influences per vertex (VertInfluences), bone index + weight, sorted by weight.</summary>
+        public int[]? BoneIdx;
+        public float[]? BoneW;
         public int VertexCount => Pos.Length;
 
-        static Vector3 ToD3(float x, float y, float z, float s) => new(x * s, -z * s, y * s);
-
-        public static SubMesh From(GltfModel.Primitive p, float scale, int materialIndex, string materialName)
+        public static SubMesh From(GltfModel.Primitive p, AxisMap map, int materialIndex, string materialName)
         {
             int n = p.Positions.Length / 3;
-            if (n > 65535) throw new InvalidDataException($"mesh {p.Name} has {n} vertices; a D3 sub-object holds at most 65535 (split the mesh)");
-            var m = new SubMesh { Name = p.Name, MaterialIndex = materialIndex, MaterialName = materialName };
-            m.Pos = Enumerable.Range(0, n).Select(i => ToD3(p.Positions[3 * i], p.Positions[3 * i + 1], p.Positions[3 * i + 2], scale)).ToArray();
-            m.Uv = Enumerable.Range(0, n).Select(i => p.Uv0 != null ? new Vector2(p.Uv0[2 * i], p.Uv0[2 * i + 1]) : Vector2.Zero).ToArray();
-            m.Indices = p.Indices.Select(i => (ushort)i).ToArray();
-            if (p.Normals != null) m.Nrm = Enumerable.Range(0, n).Select(i => Vector3.Normalize(ToD3(p.Normals[3 * i], p.Normals[3 * i + 1], p.Normals[3 * i + 2], 1))).ToArray();
+            var pos = Enumerable.Range(0, n).Select(i => map.Pos(new Vector3(p.Positions[3 * i], p.Positions[3 * i + 1], p.Positions[3 * i + 2]))).ToArray();
+            var nrm = p.Normals == null ? null : Enumerable.Range(0, n).Select(i => Vector3.Normalize(map.Dir(new Vector3(p.Normals[3 * i], p.Normals[3 * i + 1], p.Normals[3 * i + 2])))).ToArray();
+            return FromD3(p.Name, pos, nrm, p.Uv0, p.Indices, materialIndex, materialName);
+        }
+
+        /// <summary>A sub-object from D3-space positions and (optional) normals: computes missing normals and the tangents.</summary>
+        public static SubMesh FromD3(string name, Vector3[] pos, Vector3[]? normals, float[]? uv0, int[] indices, int materialIndex, string materialName)
+        {
+            int n = pos.Length;
+            if (n > 65535) throw new InvalidDataException($"mesh {name} has {n} vertices; a D3 sub-object holds at most 65535 (split the mesh)");
+            var m = new SubMesh { Name = name, MaterialIndex = materialIndex, MaterialName = materialName, Pos = pos };
+            m.Uv = Enumerable.Range(0, n).Select(i => uv0 != null ? new Vector2(uv0[2 * i], uv0[2 * i + 1]) : Vector2.Zero).ToArray();
+            m.Indices = indices.Select(i => (ushort)i).ToArray();
+            if (normals != null) m.Nrm = normals;
             else
             {
                 // no normals: area-weighted smooth normals
@@ -463,7 +490,7 @@ public static class ModelImport
 
     // ------------------------------------------------------------------------------------------------ mod.json
 
-    static void UpdateModJson(string modDir, List<(int Group, int Sno, string Name, string Path, int Size)> written, Action<string> say)
+    internal static void UpdateModJson(string modDir, List<(int Group, int Sno, string Name, string Path, int Size)> written, Action<string> say)
     {
         var path = Path.Combine(modDir, "mod.json");
         JsonObject j = File.Exists(path)
@@ -483,7 +510,7 @@ public static class ModelImport
 
     // ------------------------------------------------------------------------------------------------ helpers
 
-    static string SafeName(string s, int max)
+    internal static string SafeName(string s, int max)
     {
         var sb = new StringBuilder();
         foreach (char ch in s) sb.Append(ch < 128 && (char.IsLetterOrDigit(ch) || ch is '_' or ' ' or '|' or '-' or '.') ? ch : '_');
@@ -491,20 +518,22 @@ public static class ModelImport
         return r.Length > max ? r[..max] : r;
     }
 
-    static int I32(byte[] b, int at) => BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(at));
-    static void W32(byte[] b, int at, int v) => BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(at), v);
-    static void WF(byte[] b, int at, float v) => BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(at), v);
-    static void WVec(byte[] b, int at, Vector3 v) { WF(b, at, v.X); WF(b, at + 4, v.Y); WF(b, at + 8, v.Z); }
+    internal static int I32(byte[] b, int at) => BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(at));
+    internal static float F32(byte[] b, int at) => BinaryPrimitives.ReadSingleLittleEndian(b.AsSpan(at));
+    internal static void W32(byte[] b, int at, int v) => BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(at), v);
+    internal static void WF(byte[] b, int at, float v) => BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(at), v);
+    internal static void WVec(byte[] b, int at, Vector3 v) { WF(b, at, v.X); WF(b, at + 4, v.Y); WF(b, at + 8, v.Z); }
+    internal static void WQuat(byte[] b, int at, Quaternion q) { WF(b, at, q.X); WF(b, at + 4, q.Y); WF(b, at + 8, q.Z); WF(b, at + 12, q.W); }
 
     /// <summary>Unit vector -> 3 bytes (b - 128) / 127, fourth byte 0 (FatVertex normal/tangent/bitangent encoding).</summary>
-    static void PutDir(byte[] b, int at, Vector3 v)
+    internal static void PutDir(byte[] b, int at, Vector3 v)
     {
         b[at] = Enc(v.X); b[at + 1] = Enc(v.Y); b[at + 2] = Enc(v.Z); b[at + 3] = 0;
         static byte Enc(float f) => (byte)Math.Clamp((int)MathF.Round(f * 127 + 128), 1, 255);
     }
 
     /// <summary>UV0: s16 = round(u * 512), stored as raw ^ 0x8000 (decode: (s16)(raw ^ 0x8000) / 512).</summary>
-    static void WUv(byte[] b, int at, float u)
+    internal static void WUv(byte[] b, int at, float u)
     {
         int s = Math.Clamp((int)MathF.Round(u * 512), short.MinValue, short.MaxValue);
         BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(at), (ushort)((ushort)(short)s ^ 0x8000));

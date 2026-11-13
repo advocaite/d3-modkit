@@ -34,7 +34,7 @@ The ModKit's command line tool (`D3ModTool.exe`, .NET 8). Options take the form 
 | Command | Does |
 |---|---|
 | `casc-extract <group> <nameRegex> <outDir>` | Extracts stock SNO files from the installed game, e.g. `casc-extract UI "^BattleNetCampaign$" out`. |
-| `import-gltf <model.glb\|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>] [--install DIR]` | Turns a glTF model into a new static prop: a texture, an appearance and an actor in the mod's `data\`. See [Game data](07-game-data.md#models-import-gltf). |
+| `import-gltf <model.glb\|.gltf> <modDir> --name <Name> [--like <actor>] [--sno <id>] [--scale <s>] [--actor-scale <s>] [--forward +z\|-z\|+x\|-x] [--static yes] [--monster <sno>] [--fps <n>] [--install DIR]` | Turns a glTF model into game data in the mod's `data\`. A static model becomes a prop (texture, appearance, actor). A skinned model becomes an animated monster (textures, appearance with skeleton, one Anim per clip, AnimSet, Monster actor). `--forward`: the glTF axis the model faces (default `+z` for skinned models, `+x` for props). `--static yes`: import a skinned model as a prop. `--monster`: the Monster SNO the new monster uses (default: the template's). `--fps`: animation sample rate (default 30). See [Game data](07-game-data.md#models-import-gltf). |
 | `ui-*` | Layout editing; see [Game data](07-game-data.md#ui-layout-tools). |
 | `ui-designer [projectDir] [--port N] [--install DIR] [--browser no]` | The visual UI designer; see [Game data](07-game-data.md#ui-designer). |
 | `ui-roundtrip <dir>` | Checks that every `.ui` under the folder writes back byte-exact. |
